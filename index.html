@@ -930,7 +930,7 @@ body.standalone .model-grid { display: none; }
     </select>
     <div class="cfg-audio-row">
       <input type="file" id="cfgModelFile" accept=".glb,.gltf,.obj,.fbx,.mtl,.bin,.png,.jpg,.jpeg" multiple style="display:none">
-      <button class="cfg-music-btn" id="cfgModelUpload">⬆ 上传模型到服务器</button>
+      <button class="cfg-music-btn" id="cfgModelUpload">上传模型到服务器</button>
     </div>
   </div>
   <div class="config-item config-item-col">
@@ -953,7 +953,7 @@ body.standalone .model-grid { display: none; }
     </div>
     <div class="cfg-audio-row">
       <input type="file" id="cfgMp3File" accept=".mp3,.m4a,.wav,.ogg" style="display:none">
-      <button class="cfg-music-btn" id="cfgMp3Upload">⬆ 上传 MP3 到服务器</button>
+      <button class="cfg-music-btn" id="cfgMp3Upload">上传 MP3 到服务器</button>
     </div>
   </div>
   <div class="config-item config-item-col">
@@ -964,7 +964,7 @@ body.standalone .model-grid { display: none; }
     <input type="text" class="cfg-mp3-input" id="cfgPdf" placeholder="PDF 文件地址（或在上方选择已上传）">
     <div class="cfg-audio-row">
       <input type="file" id="cfgPdfFile" accept=".pdf" style="display:none">
-      <button class="cfg-music-btn" id="cfgPdfUpload">⬆ 上传 PDF 到服务器</button>
+      <button class="cfg-music-btn" id="cfgPdfUpload">上传 PDF 到服务器</button>
     </div>
   </div>
 </div>
@@ -1430,7 +1430,7 @@ class ModelViewer {
     const timeout = setTimeout(() => {
       if (done) return; done = true;
       this._showLoadError(a);
-    }, 8000); // 8 秒仍未就绪 → 判为加载失败，避免无限“加载中”
+    }, 8000); // 8 秒仍未就绪则判为加载失败，避免无限“加载中”
     const onReady = () => {
       if (done) return; done = true; clearTimeout(timeout);
       a.play().then(() => { this.audioPlaying = true; this._updateAudioUI(); })
@@ -3108,8 +3108,8 @@ const demoModels = [
 
 /* ================================================================
  *  初始化：解析 URL 参数
- *  - 带 ?url= 参数 → 单模型模式（独立链接 / 全景热点嵌入）
- *  - 无参数        → 多窗口模式（4 个内置示例 + 控制面板）
+ *  - 带 ?url= 参数 => 单模型模式（独立链接 / 全景热点嵌入）
+ *  - 无参数        => 多窗口模式（4 个内置示例 + 控制面板）
  * ================================================================ */
 const queryParams = new URLSearchParams(location.search);
 const queryUrl = queryParams.get('url');

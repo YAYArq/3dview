@@ -56,8 +56,8 @@ cd deploy      # 进入 deploy 目录
 sudo bash scripts/deploy.sh
 ```
 
-脚本会：建站点目录 → 拷贝前端 → 部署上传服务 → 写固定公网 IP → 装 systemd 服务 →
-配置 nginx 站点（软链）+ reload → 启动服务 → 打印验证结果。
+脚本会：建站点目录 => 拷贝前端 => 部署上传服务 => 写固定公网 IP => 装 systemd 服务 =>
+配置 nginx 站点（软链）+ reload => 启动服务 => 打印验证结果。
 
 部署完成后访问：`http://你的IP:10280/index.html`
 
