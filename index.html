@@ -1,0 +1,3283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D模型多窗口展示</title>
+
+<!-- ===== Three.js r147 UMD（最后一个含 examples/js/ 的版本，全局 THREE 命名空间） ===== -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"
+        integrity="sha384-vV17nr/rMaJqmeZkFUzXLpHdQ+ME5QHKdydaqqN+3Ga39RJlNrTatJxHwGV4ml2C"
+        crossorigin="anonymous"></script>
+<!-- OrbitControls：鼠标拖拽旋转 / 滚轮缩放 / 右键平移 -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<!-- GLTFLoader：加载 .glb / .gltf 模型 -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<!-- fflate：FBXLoader 的依赖（提供全局 fflate，须在 FBXLoader 之前） -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/libs/fflate.min.js"></script>
+<!-- OBJ/MTL/FBX 加载器：支持 .obj（含 .mtl 贴图）与 .fbx -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/OBJLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/MTLLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/FBXLoader.js"></script>
+<!-- PDF.js：用 canvas 渲染 PDF（弹窗只做查看/关闭，无编辑打印工具栏） -->
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
+<script>
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdn.jsdelivr.net/npm/pdfjs-dist@2.16.105/build/pdf.worker.min.js';
+  }
+</script>
+
+<style>
+/* ===== 全局重置与基础样式 ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+               "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: #f0f2f5;
+  color: #1f2937;
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+/* ===== 顶部控制面板 ===== */
+.control-panel {
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 16px 24px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.control-panel h1 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #111827;
+}
+
+.control-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.control-row input[type="text"] {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+  background: #f9fafb;
+}
+
+.control-row input[type="text"]:focus {
+  border-color: #3b82f6;
+  background: #ffffff;
+}
+
+/* ===== 按钮统一样式 ===== */
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-primary {
+  background: #3b82f6;
+  color: #ffffff;
+}
+.btn-primary:hover { background: #2563eb; }
+
+.btn-ghost {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+.btn-ghost:hover { background: #e5e7eb; }
+
+.btn-icon {
+  padding: 6px;
+  width: 30px;
+  height: 30px;
+  justify-content: center;
+  background: transparent;
+  color: #6b7280;
+  border-radius: 6px;
+}
+.btn-icon:hover {
+  background: #f3f4f6;
+  color: #1f2937;
+}
+
+.btn-icon.danger:hover {
+  background: #fef2f2;
+  color: #ef4444;
+}
+
+/* ===== 模型网格布局 ===== */
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 20px;
+  padding: 24px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* ===== 模型卡片 ===== */
+.model-card {
+  background: #ffffff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.model-card:hover {
+  box-shadow: 0 10px 25px rgba(0,0,0,0.10), 0 4px 10px rgba(0,0,0,0.06);
+  transform: translateY(-2px);
+}
+
+/* 卡片标题栏 */
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  margin-right: 8px;
+}
+
+.card-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* 3D 画布容器 */
+.canvas-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #e8eaed; /* 浅灰色背景 */
+  overflow: hidden;
+}
+
+.canvas-wrapper canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ===== Loading 转圈动画 ===== */
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(232, 234, 237, 0.85);
+  z-index: 10;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #d1d5db;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* ===== 加载失败提示 ===== */
+.error-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  text-align: center;
+  background: #fef2f2;
+  z-index: 10;
+}
+
+.error-overlay.visible { display: flex; }
+
+.error-icon {
+  width: 40px;
+  height: 40px;
+  color: #ef4444;
+}
+
+.error-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #991b1b;
+}
+
+.error-desc {
+  font-size: 12px;
+  color: #b91c1c;
+  word-break: break-all;
+  white-space: pre-wrap;
+  text-align: left;
+  max-width: 100%;
+}
+
+/* ===== 卡片描述区 ===== */
+.card-desc {
+  padding: 12px 16px;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.6;
+  border-top: 1px solid #f3f4f6;
+  flex: 1;
+}
+
+.card-desc:empty { display: none; }
+
+/* ===== 空状态提示 ===== */
+.empty-state {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  color: #9ca3af;
+}
+
+.empty-state p { font-size: 14px; }
+
+/* ===== 移动端适配：单列 ===== */
+@media (max-width: 640px) {
+  .model-grid {
+    grid-template-columns: 1fr;
+    padding: 16px;
+    gap: 16px;
+  }
+  .control-panel { padding: 12px 16px; }
+  .control-row input#modelTitleInput { width: 100%; }
+  .control-row .btn { flex: 1; justify-content: center; }
+}
+
+/* ===== 全屏独立视图 ===== */
+.fullscreen-modal {
+  position: fixed;
+  inset: 0;
+  background: #111827;
+  z-index: 1000;
+  display: none;
+  flex-direction: column;
+}
+.fullscreen-modal.open { display: flex; }
+
+.fs-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  background: #1f2937;
+  border-bottom: 1px solid #374151;
+  color: #f9fafb;
+  flex-shrink: 0;
+}
+.fs-title {
+  font-size: 15px;
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fs-btn {
+  padding: 6px 14px;
+  border: 1px solid #4b5563;
+  border-radius: 8px;
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fs-btn:hover { background: #374151; }
+
+.fs-canvas {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+.fs-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ===== 配置面板（弹出浮层） ===== */
+.config-popover {
+  position: fixed;
+  z-index: 1100;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+  padding: 14px 16px;
+  width: 300px;
+  display: none;
+  font-size: 13px;
+  color: #374151;
+}
+.config-popover.open { display: block; }
+
+.config-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.config-title .cfg-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9ca3af;
+  padding: 2px;
+  font-size: 16px;
+  line-height: 1;
+}
+.config-title .cfg-close:hover { color: #1f2937; }
+
+.config-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+.config-item:last-child { margin-bottom: 0; }
+
+.config-item .cfg-label {
+  color: #4b5563;
+  flex-shrink: 0;
+}
+
+/* 开关样式 */
+.cfg-switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.cfg-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.cfg-switch .slider {
+  position: absolute;
+  inset: 0;
+  background: #d1d5db;
+  border-radius: 20px;
+  transition: background 0.2s;
+}
+.cfg-switch .slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 2px;
+  top: 2px;
+  background: #ffffff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.cfg-switch input:checked + .slider { background: #3b82f6; }
+.cfg-switch input:checked + .slider::before { transform: translateX(16px); }
+
+/* 滑块样式 */
+.cfg-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 110px;
+  height: 4px;
+  border-radius: 4px;
+  background: #e5e7eb;
+  outline: none;
+  cursor: pointer;
+}
+.cfg-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+}
+.cfg-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+}
+.cfg-value {
+  color: #6b7280;
+  font-size: 12px;
+  width: 42px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* 背景色选择 */
+.cfg-colors {
+  display: flex;
+  gap: 8px;
+}
+.cfg-color {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.cfg-color:hover { transform: scale(1.12); }
+.cfg-color.active { border-color: #111827; }
+
+/* 配置面板：文本输入与 MP3 */
+.config-item-col {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.config-item-col .cfg-label { margin-bottom: 2px; }
+.cfg-textarea {
+  width: 100%;
+  resize: none;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #374151;
+  outline: none;
+  min-height: 52px;
+}
+.cfg-textarea:focus { border-color: #3b82f6; }
+.cfg-mp3-input {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #374151;
+  outline: none;
+  background: #f9fafb;
+}
+.cfg-mp3-input:focus { border-color: #3b82f6; background: #fff; }
+.cfg-audio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cfg-audio-btn {
+  padding: 5px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #f3f4f6;
+  color: #374151;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.cfg-audio-btn:hover { background: #e5e7eb; }
+
+.cfg-music-select {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2937;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.cfg-music-btn {
+  padding: 5px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #f3f4f6;
+  color: #374151;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.cfg-music-btn:hover { background: #e5e7eb; }
+.cfg-audio-status {
+  font-size: 11px;
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== 模型下方居中文本浮层 ===== */
+.model-text {
+  position: absolute;
+  left: 50%;
+  bottom: 70px;
+  transform: translateX(-50%);
+  max-width: 86%;
+  background: rgba(17, 24, 39, 0.62);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.6;
+  padding: 8px 18px;
+  border-radius: 10px;
+  text-align: center;
+  z-index: 8;
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+  word-break: break-word;
+}
+.model-text:empty { display: none; }
+.model-text.collapsed { display: none; }
+
+/* ===== 窗口内 PDF 弹窗（覆盖画布，PDF.js canvas 渲染，仅查看/关闭） ===== */
+.pdf-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  background: rgba(15, 17, 21, 0.9);
+  flex-direction: column;
+  align-items: stretch;
+  box-sizing: border-box;
+}
+.pdf-modal-head {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  gap: 8px;
+  color: #fff;
+  font-size: 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+.pdf-modal-title { flex: 0 0 auto; }
+.pdf-modal-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.pdf-tbtn {
+  border: none;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  min-width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pdf-tbtn:hover { background: rgba(255, 255, 255, 0.32); }
+.pdf-modal-close {
+  border: none;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  margin-left: 2px;
+}
+.pdf-modal-close:hover { background: rgba(255, 255, 255, 0.32); }
+.pdf-modal-body {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  background: #1b1f26;
+  padding: 10px;
+}
+.pdf-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.pdf-page {
+  display: flex;
+  justify-content: center;
+}
+.pdf-canvas {
+  display: block;
+  margin: 0 auto;
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* ===== 底部控制条（水平居中：文本折叠按钮 + 背景音乐播放/暂停） ===== */
+.audio-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 10;
+  pointer-events: auto;
+}
+.audio-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(17, 24, 39, 0.55);
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, transform 0.15s;
+}
+.audio-btn:hover { background: rgba(17, 24, 39, 0.8); }
+.audio-btn:active { transform: scale(0.92); }
+.audio-btn.playing { background: rgba(59, 130, 246, 0.8); }
+.audio-btn.text-toggle { font-size: 15px; }
+.auto-rotate-btn { font-size: 15px; }
+.auto-rotate-btn.active { background: rgba(34, 197, 94, 0.85); color: #fff; }
+
+/* ===== 单模型模式（全景热点嵌入 / 独立链接打开） ===== */
+body.standalone { background: #e8eaed; }
+body.standalone .control-panel { display: none; }
+body.standalone .model-grid { display: none; }
+
+/* 独立页“点击开始播放”封面 */
+.play-cover {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+}
+.play-cover-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  color: #fff;
+}
+.play-cover-btn {
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  background: rgba(59, 130, 246, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  padding-left: 6px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  animation: play-cover-pulse 1.6s ease-in-out infinite;
+}
+.play-cover-text {
+  font-size: 16px;
+  letter-spacing: 1px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+@keyframes play-cover-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+.standalone-wrap {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #e8eaed;
+}
+.standalone-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  background: rgba(255,255,255,0.92);
+  border-bottom: 1px solid #e5e7eb;
+  backdrop-filter: blur(6px);
+  flex-shrink: 0;
+  z-index: 5;
+}
+.standalone-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.standalone-btn {
+  padding: 6px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #4b5563;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.standalone-btn:hover { background: #f3f4f6; color: #111827; }
+.standalone-canvas {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+.standalone-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ===== 复制链接成功提示 ===== */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  background: rgba(17,24,39,0.9);
+  color: #ffffff;
+  font-size: 13px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  z-index: 2000;
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.toast.show { opacity: 1; }
+
+
+</style>
+</head>
+<body>
+
+<!-- ===== 顶部控制面板 ===== -->
+<header class="control-panel">
+  <h1>3D 模型多窗口展示</h1>
+  <div class="control-row">
+    <!-- 新建实例：点击创建空白实例（模型等可在配置面板选择/上传） -->
+    <button class="btn btn-primary" id="newInstanceBtn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      新建实例
+    </button>
+    <!-- 上传模型：选择并上传模型文件到服务器（.glb/.gltf/.obj/.fbx，OBJ 可带 .mtl/贴图） -->
+    <button class="btn btn-ghost" id="uploadModelBtn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      上传模型
+    </button>
+    <!-- 上传 MP3 背景音乐到服务器的 music 目录 -->
+    <button class="btn btn-ghost" id="uploadMusicBtn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      上传音乐
+    </button>
+    <!-- 上传 PDF 到服务器的 pdf 目录（供各实例在配置面板中选择） -->
+    <button class="btn btn-ghost" id="uploadPdfBtn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
+      上传 PDF
+    </button>
+    <button class="btn btn-ghost" id="clearAllBtn">清空全部</button>
+    <!-- 隐藏的文件选择器：模型（.glb/.gltf/.obj/.fbx 及配套贴图等）、背景音乐（.mp3）、PDF -->
+    <input type="file" id="modelFileInput" accept=".glb,.gltf,.obj,.fbx,.mtl,.bin,.png,.jpg,.jpeg" multiple style="display:none">
+    <input type="file" id="musicFileInput" accept=".mp3,.m4a,.wav,.ogg" style="display:none">
+    <input type="file" id="pdfTopFileInput" accept=".pdf" style="display:none">
+  </div>
+</header>
+
+<!-- ===== 模型卡片网格 ===== -->
+<main id="modelGrid" class="model-grid"></main>
+
+<!-- ===== 全屏独立视图 ===== -->
+<div id="fullscreenModal" class="fullscreen-modal">
+  <div class="fs-header">
+    <span class="fs-title" id="fsTitle"></span>
+    <button class="fs-btn" id="fsResetBtn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+      重置视角
+    </button>
+    <button class="fs-btn" id="fsConfigBtn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      配置
+    </button>
+    <button class="fs-btn" id="fsCloseBtn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      关闭
+    </button>
+  </div>
+  <div class="fs-canvas" id="fsCanvas"></div>
+</div>
+
+<!-- ===== 全局配置浮层（每个窗口独立一套配置值） ===== -->
+<div id="configPopover" class="config-popover">
+  <div class="config-title">
+    <span id="cfgTitle">窗口配置</span>
+    <button class="cfg-close" id="cfgCloseBtn" title="关闭">×</button>
+  </div>
+  <div class="config-item">
+    <span class="cfg-label">自动旋转</span>
+    <label class="cfg-switch">
+      <input type="checkbox" id="cfgRotate">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div class="config-item">
+    <span class="cfg-label">旋转速度</span>
+    <input type="range" class="cfg-range" id="cfgRotateSpeed" min="0.2" max="4" step="0.1">
+    <span class="cfg-value" id="cfgRotateSpeedVal">1.0x</span>
+  </div>
+  <div class="config-item">
+    <span class="cfg-label">播放动画</span>
+    <label class="cfg-switch">
+      <input type="checkbox" id="cfgAnim">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div class="config-item">
+    <span class="cfg-label">动画速度</span>
+    <input type="range" class="cfg-range" id="cfgAnimSpeed" min="0" max="3" step="0.1">
+    <span class="cfg-value" id="cfgAnimSpeedVal">1.0x</span>
+  </div>
+  <div class="config-item">
+    <span class="cfg-label">背景颜色</span>
+    <div class="cfg-colors" id="cfgColors"></div>
+  </div>
+  <div class="config-item config-item-col">
+    <span class="cfg-label">实例名称</span>
+    <input type="text" class="cfg-mp3-input" id="cfgInstanceName" placeholder="输入本实例名称">
+  </div>
+  <div class="config-item config-item-col">
+    <span class="cfg-label">模型（选择已上传模型 / 上传新的）</span>
+    <select class="cfg-music-select" id="cfgModelSelect" title="选择服务器 models 目录下已上传的模型">
+      <option value="">— 请选择已上传模型 —</option>
+    </select>
+    <div class="cfg-audio-row">
+      <input type="file" id="cfgModelFile" accept=".glb,.gltf,.obj,.fbx,.mtl,.bin,.png,.jpg,.jpeg" multiple style="display:none">
+      <button class="cfg-music-btn" id="cfgModelUpload">⬆ 上传模型到服务器</button>
+    </div>
+  </div>
+  <div class="config-item config-item-col">
+    <span class="cfg-label">独立链接 ID（可自定义固定 ID，复制链接时使用；仅字母/数字，1-32 位）</span>
+    <input type="text" class="cfg-mp3-input" id="cfgCustomId" placeholder="留空则自动生成">
+  </div>
+  <div class="config-item config-item-col">
+    <span class="cfg-label">展示文本（显示在模型正下方居中）</span>
+    <textarea class="cfg-textarea" id="cfgText" rows="2" placeholder="输入要展示的文字…"></textarea>
+  </div>
+  <div class="config-item config-item-col">
+    <span class="cfg-label">背景音乐 MP3</span>
+    <select class="cfg-music-select" id="cfgMusicSelect" title="选择服务器 music 目录下已上传的 MP3">
+      <option value="">— 请选择已上传 MP3 —</option>
+    </select>
+    <input type="text" class="cfg-mp3-input" id="cfgMp3" placeholder="MP3 文件地址（或在上方选择已上传）">
+    <div class="cfg-audio-row">
+      <button class="cfg-audio-btn" id="cfgMp3Play">试听 / 停止</button>
+      <span class="cfg-audio-status" id="cfgMp3Status">未配置</span>
+    </div>
+    <div class="cfg-audio-row">
+      <input type="file" id="cfgMp3File" accept=".mp3,.m4a,.wav,.ogg" style="display:none">
+      <button class="cfg-music-btn" id="cfgMp3Upload">⬆ 上传 MP3 到服务器</button>
+    </div>
+  </div>
+  <div class="config-item config-item-col">
+    <span class="cfg-label">PDF 文件（本实例独立配置；需在所选模型下方展示 PDF 时上传）</span>
+    <select class="cfg-music-select" id="cfgPdfSelect" title="选择服务器 pdf 目录下已上传的 PDF">
+      <option value="">— 请选择已上传 PDF —</option>
+    </select>
+    <input type="text" class="cfg-mp3-input" id="cfgPdf" placeholder="PDF 文件地址（或在上方选择已上传）">
+    <div class="cfg-audio-row">
+      <input type="file" id="cfgPdfFile" accept=".pdf" style="display:none">
+      <button class="cfg-music-btn" id="cfgPdfUpload">⬆ 上传 PDF 到服务器</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================================================================
+ *  3D 模型多窗口展示
+ *  核心思路：每个 ModelViewer 实例拥有独立的
+ *  scene / camera / renderer / controls / lights，
+ *  统一由一个 requestAnimationFrame 循环驱动所有实例渲染。
+ * ================================================================ */
+
+// 全局运行时错误捕获（排查“点了没反应”等静默问题；正式发布时可按需移除）
+window.addEventListener('error', function (ev) {
+  try { console.error('[页面错误]', ev && ev.message); showToast('页面错误：' + ((ev && ev.message) || ev)); } catch (e) {}
+});
+window.addEventListener('unhandledrejection', function (ev) {
+  try { console.error('[异步错误]', ev && ev.reason); showToast('异步错误：' + ((ev && ev.reason && (ev.reason.message || ev.reason)) || ev)); } catch (e) {}
+});
+
+// 全局：所有活跃的 viewer 实例
+const viewers = [];
+// 当前处于全屏独立视图的 viewer（同一时间只允许一个全屏）
+let fsViewer = null;
+const grid = document.getElementById('modelGrid');
+const gltfLoader = new THREE.GLTFLoader(); // .glb / .gltf
+const objLoader  = new THREE.OBJLoader();  // .obj
+const mtlLoader  = new THREE.MTLLoader();  // .mtl（OBJ 材质）
+const fbxLoader  = new THREE.FBXLoader();  // .fbx
+
+/* ================================================================
+ *  ModelViewer 类 —— 封装一个独立的 3D 预览窗口
+ * ================================================================ */
+class ModelViewer {
+  /**
+   * @param {Object} opts
+   * @param {string} opts.title     - 卡片标题
+   * @param {string} opts.url       - 模型 URL（.glb / .gltf）
+   * @param {File}   [opts.localFile] - 本地上传的模型文件（与 url 二选一）
+   * @param {string} [opts.desc]    - 模型描述
+   */
+  constructor(opts) {
+    this.title = opts.title || '未命名模型';
+    this.url = opts.url;
+    this.localFile = opts.localFile || null;
+    this.localExt = '';              // 本地上传文件的真实扩展名（blob url 无扩展名，据此分发加载器）
+    this.desc = opts.desc || '';
+    this.standalone = opts.standalone || false; // 单模型模式（独立链接 / 全景热点嵌入）
+    this.isDisposed = false;
+    this.model = null;
+    this.mixer = null;          // 动画混合器（每窗口独立）
+    this.clock = null;          // 动画时钟（每窗口独立）
+    this._refitFramesLeft = 0;  // 动画后重新适配视角的剩余帧数
+    this.initialCameraPos = null;
+    this.initialTarget = null;
+    // 本窗口独立配置（各窗口互不影响）
+    this.config = Object.assign({
+      autoRotate: false,     // 自动旋转开关
+      rotateSpeed: 1.0,      // 旋转速度倍数
+      playAnimation: true,   // 播放动画开关
+      animSpeed: 1.0,        // 动画速度倍数
+      background: '#e8eaed', // 背景色
+      text: '',              // 模型下方居中展示文本
+      mp3: '',               // 背景音乐 MP3 地址
+      volume: 1.0,           // 音乐音量
+      customId: '',          // 独立链接自定义 ID（留空则自动生成）
+      pdf: ''                // 本实例独立的 PDF 文件地址
+    }, opts.config || {});   // 支持恢复持久化配置
+    // 背景音乐
+    this.audio = null;        // Audio 对象（懒创建）
+    this.audioPlaying = false;
+    this.shortId = '';        // 独立链接短 ID（首次复制时生成，之后复用，保证同一窗口链接稳定）
+    // 全屏视图相关（单独打开时创建）
+    this.fsRenderer = null;
+    this.fsCamera = null;
+    this.fsControls = null;
+    this.fsOpen = false;
+
+    this._buildDOM();
+    this._initThree();
+    this.applyConfig(); // 恢复的配置（背景色/文本/动画等）在加载前即生效
+    // 本地文件走 Blob URL 加载，否则走远程 URL 加载
+    if (this.localFile) {
+      this.loadLocalFile(this.localFile);
+    } else if (this.url) {
+      this._loadModel();
+    } else {
+      // 空白实例：无模型，显示占位，等待配置面板选择/上传模型
+      this._showEmptyModelPlaceholder();
+    }
+    this._bindEvents();
+    this._updateAutoRotateUI();
+    // 所有实例（含主页卡片）默认折叠展示文本，点击底部文本按钮可展开
+    if (this.textEl) this.textEl.classList.add('collapsed');
+  }
+
+  /* ---------- 构建卡片 DOM ---------- */
+  _buildDOM() {
+    // ---- 单模型模式（独立链接 / 全景热点嵌入）：全屏展示，无控制面板、无卡片网格 ----
+    if (this.standalone) {
+      document.body.classList.add('standalone');
+      this.card = document.createElement('div');
+      this.card.className = 'standalone-wrap';
+
+      // 顶部条：标题 + 重置视角 + 配置
+      const header = document.createElement('div');
+      header.className = 'standalone-header';
+      this.titleEl = document.createElement('div');
+      this.titleEl.className = 'standalone-title';
+      this.titleEl.textContent = this.title;
+      // 单模型展示页：按需求不显示「配置」与「重置视角」按钮
+      header.appendChild(this.titleEl);
+
+      // 画布容器
+      this.canvasWrapper = document.createElement('div');
+      this.canvasWrapper.className = 'standalone-canvas';
+      this._buildOverlays();
+
+      this.card.appendChild(header);
+      this.card.appendChild(this.canvasWrapper);
+      document.body.appendChild(this.card);
+      return;
+    }
+
+    // ---- 多窗口模式：构建卡片 ----
+    // 卡片根元素
+    this.card = document.createElement('div');
+    this.card.className = 'model-card';
+
+    // 标题栏
+    const header = document.createElement('div');
+    header.className = 'card-header';
+
+    this.titleEl = document.createElement('div');
+    this.titleEl.className = 'card-title';
+    this.titleEl.textContent = this.title;
+
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+
+    // 复制独立链接按钮
+    this.linkBtn = document.createElement('button');
+    this.linkBtn.className = 'btn btn-icon';
+    this.linkBtn.title = '复制本窗口独立链接';
+    this.linkBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+    this.linkBtn.dataset.origText = this.linkBtn.innerHTML;
+
+    // 单独打开（全屏独立视图）按钮
+    this.fullscreenBtn = document.createElement('button');
+    this.fullscreenBtn.className = 'btn btn-icon';
+    this.fullscreenBtn.title = '单独打开';
+    this.fullscreenBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>';
+
+    // 配置按钮（齿轮）
+    this.configBtn = document.createElement('button');
+    this.configBtn.className = 'btn btn-icon';
+    this.configBtn.title = '窗口配置';
+    this.configBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+
+    // 重置视角按钮
+    this.resetBtn = document.createElement('button');
+    this.resetBtn.className = 'btn btn-icon';
+    this.resetBtn.title = '重置视角';
+    this.resetBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>';
+
+    // 删除按钮
+    this.deleteBtn = document.createElement('button');
+    this.deleteBtn.className = 'btn btn-icon danger';
+    this.deleteBtn.title = '删除窗口';
+    this.deleteBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+
+    actions.appendChild(this.linkBtn);
+    actions.appendChild(this.fullscreenBtn);
+    actions.appendChild(this.configBtn);
+    actions.appendChild(this.resetBtn);
+    actions.appendChild(this.deleteBtn);
+    header.appendChild(this.titleEl);
+    header.appendChild(actions);
+
+    // 画布容器
+    this.canvasWrapper = document.createElement('div');
+    this.canvasWrapper.className = 'canvas-wrapper';
+    this._buildOverlays();
+
+    // 描述区
+    this.descEl = document.createElement('div');
+    this.descEl.className = 'card-desc';
+    this.descEl.textContent = this.desc;
+
+    this.card.appendChild(header);
+    this.card.appendChild(this.canvasWrapper);
+    this.card.appendChild(this.descEl);
+    grid.appendChild(this.card);
+  }
+
+  /* ---------- 构建 Loading / 错误遮罩（卡片与单模型模式共用） ---------- */
+  _buildOverlays() {
+    // Loading 遮罩
+    this.loadingOverlay = document.createElement('div');
+    this.loadingOverlay.className = 'loading-overlay';
+    this.loadingOverlay.innerHTML = '<div class="spinner"></div><div class="loading-text">模型加载中…</div>';
+
+    // 错误遮罩
+    this.errorOverlay = document.createElement('div');
+    this.errorOverlay.className = 'error-overlay';
+    this.errorOverlay.innerHTML = `
+      <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <div class="error-title">模型加载失败</div>
+      <div class="error-desc"></div>`;
+    this.errorDescEl = this.errorOverlay.querySelector('.error-desc');
+
+    this.canvasWrapper.appendChild(this.loadingOverlay);
+    this.canvasWrapper.appendChild(this.errorOverlay);
+
+    // 模型下方居中文本浮层（展示文本）
+    this.textEl = document.createElement('div');
+    this.textEl.className = 'model-text';
+    this.canvasWrapper.appendChild(this.textEl);
+
+    // 底部控制条（水平居中）：[PDF 按钮] [文本折叠按钮] [背景音乐播放/暂停按钮]
+    this.audioBar = document.createElement('div');
+    this.audioBar.className = 'audio-bar';
+
+    // PDF 查看按钮（打开主页配置上传的 PDF）
+    this.pdfBtn = document.createElement('button');
+    this.pdfBtn.className = 'audio-btn pdf-btn';
+    this.pdfBtn.title = '查看 PDF';
+    this.pdfBtn.innerHTML =
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>';
+
+    // 文本折叠/展开按钮
+    this.textToggleBtn = document.createElement('button');
+    this.textToggleBtn.className = 'audio-btn text-toggle';
+    this.textToggleBtn.title = '展开 / 收起底部展示文本';
+    this.textToggleBtn.innerHTML =
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>';
+
+    // 背景音乐播放/暂停按钮
+    this.audioBtn = document.createElement('button');
+    this.audioBtn.className = 'audio-btn';
+    this.audioBtn.title = '播放 / 暂停背景音乐';
+    this.audioBtn.innerHTML = this._audioIcon(false);
+
+    // 自动旋转开关按钮（在播放按钮右边）
+    this.autoRotateBtn = document.createElement('button');
+    this.autoRotateBtn.className = 'audio-btn auto-rotate-btn';
+    this.autoRotateBtn.title = '开启 / 关闭模型自动旋转';
+    this.autoRotateBtn.innerHTML = this._rotateIcon(false);
+
+    this.audioBar.appendChild(this.pdfBtn);
+    this.audioBar.appendChild(this.textToggleBtn);
+    this.audioBar.appendChild(this.audioBtn);
+    this.audioBar.appendChild(this.autoRotateBtn);
+    this.canvasWrapper.appendChild(this.audioBar);
+
+    // 窗口内 PDF 弹窗（覆盖画布，用 PDF.js 渲染 PDF —— 仅查看 + 翻页 + 关闭，无编辑/打印工具栏）
+    this.pdfModal = document.createElement('div');
+    this.pdfModal.className = 'pdf-modal';
+    this.pdfModal.style.display = 'none';
+    this.pdfModal.innerHTML =
+      '<div class="pdf-modal-head">' +
+        '<span class="pdf-modal-title">PDF 查看</span>' +
+        '<div class="pdf-modal-tools">' +
+          '<button type="button" class="pdf-tbtn" id="pdfZoomOut" title="缩小">−</button>' +
+          '<button type="button" class="pdf-tbtn" id="pdfZoomIn" title="放大">+</button>' +
+        '</div>' +
+        '<button type="button" class="pdf-modal-close" title="关闭">×</button>' +
+      '</div>' +
+      '<div class="pdf-modal-body"><div class="pdf-pages" id="pdfPages"></div></div>';
+    this.canvasWrapper.appendChild(this.pdfModal);
+    this._pdfDoc = null;
+    this._pdfScale = 1.2;
+  }
+
+  /* ---------- 打开 PDF（窗口内弹窗，PDF.js 渲染） ---------- */
+  openPdf() {
+    const pdfUrl = this.config.pdf ? _finalizeModelUrl(this.config.pdf) : '';
+    if (!pdfUrl) {
+      showToast('本实例尚未配置 PDF，请在主页配置面板上传或选择');
+      return;
+    }
+    if (!this.pdfModal) return;
+    this.pdfModal.style.display = 'flex';
+    this._loadPdf(pdfUrl);
+  }
+  closePdf() {
+    if (!this.pdfModal) return;
+    this.pdfModal.style.display = 'none';
+    this._pdfDoc = null;
+    const pages = this.pdfModal.querySelector('#pdfPages');
+    if (pages) pages.innerHTML = '';
+  }
+  async _loadPdf(url) {
+    try {
+      if (!window.pdfjsLib) { showToast('PDF 查看组件加载失败'); return; }
+      pdfjsLib.getDocument(url).promise.then((doc) => {
+        this._pdfDoc = doc;
+        this._pdfScale = this._fitScale();
+        this._renderAllPages();
+      }).catch((e) => {
+        console.error('PDF 加载失败', e);
+        showToast('PDF 加载失败，请检查文件');
+      });
+    } catch (e) {
+      console.error('PDF 加载失败', e);
+      showToast('PDF 加载失败，请检查文件');
+    }
+  }
+  // 把所有页连续渲染到 #pdfPages（纵向排布，整条向下滚动，不分页）
+  async _renderAllPages() {
+    if (!this._pdfDoc) return;
+    const wrap = this.pdfModal.querySelector('#pdfPages');
+    wrap.innerHTML = '';
+    const body = this.pdfModal.querySelector('.pdf-modal-body');
+    const maxW = body ? Math.max(160, body.clientWidth - 4) : 720;
+    for (let n = 1; n <= this._pdfDoc.numPages; n++) {
+      const page = await this._pdfDoc.getPage(n);
+      const vp = page.getViewport({ scale: this._pdfScale });
+      const pg = document.createElement('div');
+      pg.className = 'pdf-page';
+      const c = document.createElement('canvas');
+      const aspect = vp.width / vp.height;
+      let dispW = vp.width;
+      if (dispW > maxW) dispW = maxW;
+      const dispH = dispW / aspect;
+      c.className = 'pdf-canvas';
+      c.width = vp.width;   // 原始分辨率，保持清晰
+      c.height = vp.height;
+      c.style.width = Math.round(dispW) + 'px';
+      c.style.height = Math.round(dispH) + 'px';
+      pg.appendChild(c);
+      wrap.appendChild(pg);
+      await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    }
+  }
+  // 缩放：按新比例重排所有页显示尺寸（canvas 像素够清晰，不必重渲）
+  _pdfZoom(d) {
+    if (!this._pdfDoc) return;
+    this._pdfScale = Math.max(0.4, Math.min(4, this._pdfScale + d));
+    const body = this.pdfModal.querySelector('.pdf-modal-body');
+    const maxW = body ? Math.max(160, body.clientWidth - 4) : 720;
+    this.pdfModal.querySelectorAll('#pdfPages canvas.pdf-canvas').forEach((c) => {
+      const bw = parseInt(c.width, 10);
+      const bh = parseInt(c.height, 10);
+      if (!bw || !bh) return;
+      let w = bw * this._pdfScale;
+      if (w > maxW) w = maxW;
+      c.style.width = Math.round(w) + 'px';
+      c.style.height = Math.round(w / (bw / bh)) + 'px';
+    });
+  }
+  _fitScale() {
+    try {
+      const body = this.pdfModal.querySelector('.pdf-modal-body');
+      const w = body ? body.clientWidth : 800;
+      return Math.max(0.5, Math.min(w / 800, 2));
+    } catch (e) { return 1.2; }
+  }
+
+  _toggleAutoRotate() {
+    this.config.autoRotate = !this.config.autoRotate;
+    this.applyConfig();
+    _saveWindows();
+    this._updateAutoRotateUI();
+  }
+  _updateAutoRotateUI() {
+    if (this.autoRotateBtn) {
+      const on = !!this.config.autoRotate;
+      this.autoRotateBtn.classList.toggle('active', on);
+      this.autoRotateBtn.innerHTML = this._rotateIcon(on);
+      this.autoRotateBtn.title = on ? '关闭模型自动旋转' : '开启模型自动旋转';
+    }
+  }
+
+  /* ---------- 播放/暂停按钮图标 ---------- */
+  _audioIcon(playing) {
+    if (playing) {
+      // 暂停图标
+      return '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
+    }
+    // 播放图标
+    return '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86a1 1 0 0 0-1.5.86z"/></svg>';
+  }
+
+  /* ---------- 自动旋转图标（active=开启） ---------- */
+  _rotateIcon(active) {
+    if (active) {
+      return '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 5V2L8 6l4 4V7a5 5 0 1 1-5 5 1 1 0 0 0-2 0 7 7 0 1 0 7-7z"/></svg>';
+    }
+    return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9"/><polyline points="21 3 21 9 15 9"/></svg>';
+  }
+
+  /* ---------- 背景音乐控制（完全重构：单一状态机，明确加载/播放/错误，杜绝无限加载） ---------- */
+  _absUrl(u) {
+    try { return new URL(u, location.href).href; } catch (e) { return u; }
+  }
+  // 规范化 MP3 地址（修正内网 host + 路径编码），返回可直接用于 <audio src> 的地址
+  _finalizedMp3() {
+    if (!this.config.mp3) return '';
+    try {
+      return _finalizeModelUrl(this.config.mp3);
+    } catch (e) { return this.config.mp3; }
+  }
+  // 取出可用的 Audio 元素（懒创建；地址变化时更新 src 并按需 load）
+  _getAudio() {
+    const src = this._finalizedMp3();
+    if (!this.audio) {
+      this.audio = new Audio();
+      this.audio.loop = true;
+      this.audio.volume = (typeof this.config.volume === 'number') ? this.config.volume : 1;
+      this.audio.preload = 'auto';
+    }
+    const curSrc = this.audio.getAttribute('src') || '';
+    if (curSrc && this._absUrl(curSrc) !== this._absUrl(src)) {
+      // 地址变化：卸载旧源并挂新源
+      this.audio.pause();
+      this.audio.removeAttribute('src');
+      this.audio.load();
+    }
+    if (!src) return this.audio; // 无地址：不设置 src（播放前会提示）
+    if (!curSrc) {
+      this.audio.src = src;
+      this.audio.load(); // 用户手势触发立即开始加载，避免“等待自动加载”
+    }
+    return this.audio;
+  }
+  // 真正发起一次 play（应尽量在用户手势的同步栈内调用）
+  _doPlay(a) {
+    const p = a.play();
+    if (p === undefined) { // 旧浏览器无 play() promise
+      this.audioPlaying = true;
+      this._updateAudioUI();
+      return;
+    }
+    p.then(() => {
+      this.audioPlaying = true;
+      this._updateAudioUI();
+    }).catch((err) => {
+      this.audioPlaying = false;
+      this._updateAudioUI();
+      this._handlePlayReject(a, err);
+    });
+  }
+  // 处理 play() 被拒：区分“自动播放策略”与“加载/解码失败”
+  _handlePlayReject(a, err) {
+    const name = (err && (err.name || err.code)) || '';
+    console.warn('音频播放失败:', name, err);
+    if (name === 'NotAllowedError') {
+      // 纯自动播放策略：需要用户手势。若媒体尚未就绪，先等它加载完成再自动续播
+      if (a.readyState < 3 && a.src) {
+        showToast('音频加载中…');
+        this._waitReadyThenPlay(a);
+      } else {
+        showToast('点击页面任意位置即可播放背景音乐');
+      }
+      return;
+    }
+    // 其余：地址/格式/网络问题
+    this._showLoadError(a);
+  }
+  _waitReadyThenPlay(a) {
+    let done = false;
+    const timeout = setTimeout(() => {
+      if (done) return; done = true;
+      this._showLoadError(a);
+    }, 8000); // 8 秒仍未就绪 → 判为加载失败，避免无限“加载中”
+    const onReady = () => {
+      if (done) return; done = true; clearTimeout(timeout);
+      a.play().then(() => { this.audioPlaying = true; this._updateAudioUI(); })
+        .catch((e2) => this._handlePlayReject(a, e2));
+    };
+    a.addEventListener('canplay', onReady, { once: true });
+    a.addEventListener('canplaythrough', onReady, { once: true });
+    a.addEventListener('error', () => {
+      if (done) return; done = true; clearTimeout(timeout);
+      this._showLoadError(a);
+    }, { once: true });
+  }
+  _showLoadError(a) {
+    this.audioPlaying = false;
+    this._updateAudioUI();
+    const err = a.error;
+    let reason = err && err.message ? err.message : '';
+    showToast('音频无法播放：' + (reason || '请检查 MP3 地址是否正确、文件是否可访问'));
+  }
+  playAudio() {
+    if (!this.config.mp3) {
+      showToast('请先在配置面板中设置 MP3 地址');
+      return;
+    }
+    const a = this._getAudio();
+    if (!a.src) { return; }
+    this._doPlay(a);
+  }
+  // 自动播放用：浏览器只允许 muted 起播，先静音起播、成功后尽力恢复音量（唯一能“进页面自动响”的途径）
+  playAudioAuto() {
+    if (!this.config.mp3) return;
+    const a = this._getAudio();
+    if (!a.src) { return; }
+    const targetVol = (typeof this.config.volume === 'number') ? this.config.volume : 1;
+    a.muted = true;
+    const p = a.play();
+    if (p === undefined) {
+      a.muted = false; a.volume = targetVol;
+      this.audioPlaying = true;
+      this._updateAudioUI();
+      return;
+    }
+    p.then(() => {
+      this.audioPlaying = true;
+      this._updateAudioUI();
+      // 起播成功且处在用户交互中时再取消静音；否则保持静音播放，
+      // 首次交互兜底会恢复音量（避免浏览器拦截报错）。
+      try { a.muted = false; a.volume = targetVol; } catch (e) {}
+    }).catch((err) => {
+      // 自动播放被浏览器拦截：静默处理，不弹干扰性报错；等首次交互再正常播放
+      this.audioPlaying = false;
+      this._updateAudioUI();
+      this._autoWaitInteraction();
+    });
+  }
+  // 自动播放被拦后：等用户首次交互（点击/触摸/按键）时再尝试出声，不主动打扰
+  _autoWaitInteraction() {
+    const self = this;
+    const once = (ev) => {
+      if (!self.audioPlaying) self.playAudio();
+      document.removeEventListener('pointerdown', once);
+      document.removeEventListener('touchstart', once);
+      document.removeEventListener('keydown', once);
+    };
+    document.addEventListener('pointerdown', once, { passive: true });
+    document.addEventListener('touchstart', once, { passive: true });
+    document.addEventListener('keydown', once);
+  }
+  pauseAudio() {
+    if (this.audio) this.audio.pause();
+    this.audioPlaying = false;
+    this._updateAudioUI();
+  }
+  toggleAudio() {
+    if (this.audioPlaying) this.pauseAudio();
+    else this.playAudio();
+  }
+  _updateAudioUI() {
+    if (this.audioBtn) {
+      this.audioBtn.classList.toggle('playing', this.audioPlaying);
+      this.audioBtn.innerHTML = this._audioIcon(this.audioPlaying);
+    }
+  }
+
+  /* ---------- 初始化 Three.js 场景（每个实例完全独立） ---------- */
+  _initThree() {
+    const width = this.canvasWrapper.clientWidth || 400;
+    const height = this.canvasWrapper.clientHeight || 300;
+
+    // 独立场景
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0xe8eaed); // 浅灰色背景
+
+    // 独立相机
+    this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    this.camera.position.set(3, 2, 4);
+
+    // 独立渲染器
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer.setSize(width, height);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.outputEncoding = THREE.sRGBEncoding; // r147 需显式启用 sRGB
+    this.canvasWrapper.appendChild(this.renderer.domElement);
+
+    // 独立控制器：拖拽旋转 / 滚轮缩放 / 右键平移
+    this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;       // 惯性阻尼
+    this.controls.dampingFactor = 0.08;
+    this.controls.screenSpacePanning = true;  // 允许屏幕空间平移
+    this.controls.minDistance = 0.1;
+    this.controls.maxDistance = 100;
+
+    // 独立光照：环境光 + 方向光
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    this.scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    dirLight.position.set(5, 8, 5);
+    this.scene.add(dirLight);
+
+    // 补光（另一侧弱光，避免阴影过死）
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+    fillLight.position.set(-5, 3, -5);
+    this.scene.add(fillLight);
+
+    // 监听容器尺寸变化（独立 ResizeObserver）
+    this.resizeObserver = new ResizeObserver(() => this._onResize());
+    this.resizeObserver.observe(this.canvasWrapper);
+  }
+
+  /* ---------- 加载模型（远程 URL） ---------- */
+  _loadModel() {
+    this._loadFromUrl(this.url, '地址');
+  }
+
+  /* ---------- 空白实例占位 ---------- */
+  _showEmptyModelPlaceholder() {
+    this.loadingOverlay.style.display = 'none';
+    this.errorOverlay.classList.remove('visible');
+    if (this.descEl) {
+      this.descEl.textContent = '空白实例：点击本窗口的「配置」按钮，选择或上传模型、填写名称等内容。';
+    }
+  }
+
+  /* ---------- 切换模型（配置面板中选择/上传模型后调用） ---------- */
+  setModel(url) {
+    if (!url) { this._showEmptyModelPlaceholder(); return; }
+    // 清理旧模型与动画
+    if (this.model) {
+      this.scene.remove(this.model);
+      this.model = null;
+    }
+    if (this.mixer) { this.mixer = null; this.clock = null; }
+    this._refitFramesLeft = 0;
+    this.localFile = null;
+    this.localExt = '';
+    this.url = url;
+    if (this.descEl) this.descEl.textContent = this.desc || '';
+    this._loadFromUrl(url, '地址');
+  }
+
+  /* ---------- 加载本地上传文件（Blob URL 方式，无需服务器与 CORS） ---------- */
+  loadLocalFile(file) {
+    this.localFileName = file.name;
+    this.localExt = this._extOf(file.name); // 记录真实扩展名（blob url 无扩展名）
+    const objectUrl = URL.createObjectURL(file);
+    // 加载结束后释放 Blob URL
+    this._loadFromUrl(objectUrl, '文件', () => URL.revokeObjectURL(objectUrl));
+  }
+
+  /* ---------- 加载本地 OBJ（含同批 .mtl 与贴图的资源文件） ---------- */
+  async loadLocalObj(objFile, resourceFiles) {
+    this.loadingOverlay.style.display = 'flex';
+    this.errorOverlay.classList.remove('visible');
+    this.localFileName = objFile.name;
+    this.localExt = 'obj';
+
+    const objUrl = URL.createObjectURL(objFile);
+    // 资源文件按小写文件名映射到各自的 blob URL
+    const resMap = {};
+    resourceFiles.forEach((rf) => { resMap[rf.name.toLowerCase()] = URL.createObjectURL(rf); });
+    const revokeAll = () => {
+      URL.revokeObjectURL(objUrl);
+      Object.values(resMap).forEach((u) => URL.revokeObjectURL(u));
+    };
+    const fail = (error) => {
+      revokeAll();
+      console.error('OBJ 加载失败:', objFile.name, error);
+      this.loadingOverlay.style.display = 'none';
+      const msg = (error && (error.message || error.statusText || error.type)) || '';
+      this.errorDescEl.textContent = '文件：' + objFile.name + '\n' + (msg || '加载失败') +
+        '\n\n提示：请确认 .obj 与 .mtl、贴图文件齐全且在同一个文件夹中。';
+      this.errorOverlay.classList.add('visible');
+    };
+
+    const doLoad = (materials) => {
+      const loader = new THREE.OBJLoader();
+      if (materials) loader.setMaterials(materials);
+      loader.load(objUrl, (o) => { revokeAll(); this._applyLoadedModel(o, []); }, undefined, fail);
+    };
+
+    const mtlFile = resourceFiles.filter((rf) => this._extOf(rf.name) === 'mtl')[0];
+    if (!mtlFile) { doLoad(null); return; }
+
+    try {
+      const text = await mtlFile.text();
+      // 把 mtl 中 map_* 等引用的文件名改写为对应资源的 blob URL，让贴图能加载出来
+      const rewritten = text.replace(/\b(map_\w+|bump|disp|norm|refl|decal)\s+([^\s]+)/gi, (mm, kw, fname) => {
+        const f = String(fname).split('/').pop().split('\\').pop().toLowerCase();
+        return resMap[f] ? (kw + ' ' + resMap[f]) : mm;
+      });
+      const mats = new THREE.MTLLoader().parse(rewritten, '');
+      doLoad(mats);
+    } catch (e) {
+      console.warn('MTL 解析失败，改为无贴图加载', e);
+      doLoad(null);
+    }
+  }
+
+  /* ---------- 通用加载流程（URL 与本地文件共用） ---------- */
+  /* ---------- 统一的模型就绪处理（OBJ/FBX/GLTF 共用） ---------- */
+  _applyLoadedModel(modelObj, animations) {
+    if (this.isDisposed) return;
+    this.model = modelObj;
+    this.scene.add(this.model);
+    animations = animations || [];
+    if (animations.length > 0) {
+      this.mixer = new THREE.AnimationMixer(this.model);
+      this.clock = new THREE.Clock();
+      animations.forEach((clip) => this.mixer.clipAction(clip).play());
+      // 动画播放若干帧后再重新适配视角，确保动画展开后的姿态也完整入画
+      this._refitFramesLeft = 45;
+    }
+    // 先按初始姿态适配视角
+    this._fitModelToView(this.model);
+    // 应用本窗口独立配置（动画速度 / 背景色等）
+    this.applyConfig();
+    this.loadingOverlay.style.display = 'none';
+  }
+
+  _loadFromUrl(url, label, cleanup) {
+    this.loadingOverlay.style.display = 'flex';
+    this.errorOverlay.classList.remove('visible');
+
+    // 依扩展名分发到对应加载器。本地文件用 blob url，无扩展名，回退到记录的类型。
+    const ext = this._extOf(this.localExt ? this.localExt : url.toLowerCase());
+    // 统一的“模型就绪”处理（OBJ/FBX/GLTF 都收敛到这里）
+    const ok = (modelObj, animations) => {
+      if (cleanup) cleanup();
+      this._applyLoadedModel(modelObj, animations);
+    };
+    // 统一的错误回调
+    const fail = (error) => {
+      if (cleanup) cleanup();
+      if (this.isDisposed) return;
+      console.error('模型加载失败:', url, error);
+      this.loadingOverlay.style.display = 'none';
+      const msg = (error && (error.message || error.statusText || error.type)) || '';
+      let hint = '';
+      if (/Failed to fetch|NetworkError|Network Error|load\s+error|CORS/i.test(msg)) {
+        if (label === '文件') {
+          hint = '\n\n提示：本地上传暂不支持带同目录外部贴图的模型，请改用自包含的 .glb 文件，或使用 URL 方式并保证同目录贴图可访问。';
+        } else {
+          hint = '\n\n可能原因：\n1) 跨域(CORS)被拦截 —— 模型服务器需配置跨域规则\n2) 网络不可达 / 地址拼写错误';
+        }
+      } else if (/404|Not Found/i.test(msg)) {
+        hint = '\n\n可能原因：该地址下文件不存在（404），请检查路径是否正确';
+      }
+      const source = label === '文件' ? (this.localFileName || '本地文件') : url;
+      this.errorDescEl.textContent = (label === '文件' ? '文件：' : '地址：') + source + '\n' + (msg || '') + hint;
+      this.errorOverlay.classList.add('visible');
+    };
+
+    if (ext === 'obj') {
+      // OBJ：尝试加载同目录同名 .mtl（贴图），失败则纯 OBJ
+      this._loadObj(url, ok, fail);
+    } else if (ext === 'fbx') {
+      fbxLoader.load(url, (fbx) => ok(fbx, fbx.animations || []), undefined, fail);
+    } else {
+      // 默认 .glb / .gltf
+      gltfLoader.load(url, (gltf) => ok(gltf.scene, gltf.animations || []), undefined, fail);
+    }
+  }
+
+  /* ---------- 提取扩展名（小写） ---------- */
+  _extOf(name) {
+    const m = /\.([a-z0-9]+)(?:[?#].*)?$/i.exec(name || '');
+    return m ? m[1].toLowerCase() : '';
+  }
+
+  /* ---------- 加载 OBJ（若同目录存在同名 .mtl 则一并加载贴图材质） ---------- */
+  _loadObj(url, ok, fail) {
+    const slash = url.lastIndexOf('/');
+    const dot = url.lastIndexOf('.');
+    const dir = slash >= 0 ? url.slice(0, slash + 1) : '';
+    const base = dot > slash ? url.slice(slash + 1, dot) : '';
+    const mtlUrl = dir + base + '.mtl';
+    const loadPlain = () => objLoader.load(url, (o) => ok(o, []), undefined, fail);
+    if (!mtlUrl || mtlUrl === url) { loadPlain(); return; }
+    const xhr = new XMLHttpRequest();
+    xhr.open('HEAD', mtlUrl, true);
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        mtlLoader.setPath(dir);
+        mtlLoader.load(mtlUrl, (materials) => {
+          objLoader.setMaterials(materials);
+          loadPlain();
+        }, undefined, () => loadPlain());
+      } else {
+        loadPlain();
+      }
+    };
+    xhr.onerror = () => loadPlain();
+    xhr.send();
+  }
+
+  /* ---------- 模型加载后自动居中并计算合适相机距离 ---------- */
+  _fitModelToView(model) {
+    const box = new THREE.Box3().setFromObject(model);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+
+    // 将模型中心移到场景原点
+    model.position.sub(center);
+
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    const fovRad = this.camera.fov * (Math.PI / 180);
+    // 根据模型最大尺寸和相机视场角计算合适距离
+    let distance = Math.abs(maxDim / 2 / Math.tan(fovRad / 2));
+    distance *= 1.8; // 留 1.8 倍边距，避免模型贴边
+
+    // 设置相机位置（略带俯视角度）
+    this.camera.position.set(distance, distance * 0.6, distance);
+    this.camera.near = maxDim / 100;
+    this.camera.far = maxDim * 100;
+    this.camera.updateProjectionMatrix();
+
+    // 控制器目标指向原点
+    this.controls.target.set(0, 0, 0);
+    this.controls.update();
+
+    // 保存初始视角状态，供"重置视角"使用
+    this.initialCameraPos = this.camera.position.clone();
+    this.initialTarget = new THREE.Vector3(0, 0, 0);
+
+    // 限制缩放范围与模型尺寸挂钩
+    this.controls.minDistance = maxDim * 0.2;
+    this.controls.maxDistance = maxDim * 10;
+  }
+
+  /* ---------- 窗口尺寸变化 ---------- */
+  _onResize() {
+    const width = this.canvasWrapper.clientWidth;
+    const height = this.canvasWrapper.clientHeight;
+    if (width === 0 || height === 0) return;
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(width, height);
+  }
+
+  /* ---------- 绑定按钮事件 ---------- */
+  _bindEvents() {
+    // 顶部条按钮（standalone 模式不创建 reset/config 按钮，需判空）
+    if (this.resetBtn) this.resetBtn.addEventListener('click', () => this.resetView());
+    if (this.configBtn) this.configBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openConfigPopover(this, this.configBtn);
+    });
+    // 背景音乐按钮（卡片与单模型模式都有）
+    if (this.audioBtn) this.audioBtn.addEventListener('click', () => this.toggleAudio());
+    // 自动旋转开关按钮
+    if (this.autoRotateBtn) this.autoRotateBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._toggleAutoRotate();
+    });
+    // 底部文本折叠/展开按钮
+    if (this.textToggleBtn) this.textToggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.textEl) this.textEl.classList.toggle('collapsed');
+    });
+    // PDF 查看按钮：在窗口内弹窗打开本实例配置的 PDF
+    if (this.pdfBtn) this.pdfBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.openPdf();
+    });
+    // PDF 弹窗关闭按钮
+    if (this.pdfModal) {
+      const close = this.pdfModal.querySelector('.pdf-modal-close');
+      if (close) close.addEventListener('click', (e) => { e.stopPropagation(); this.closePdf(); });
+      this.pdfModal.addEventListener('click', (e) => { if (e.target === this.pdfModal) this.closePdf(); });
+      // 翻页 / 缩放
+      const bind = (id, fn) => {
+        const b = this.pdfModal.querySelector(id);
+        if (b) b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+      };
+      bind('#pdfZoomIn', () => this._pdfZoom(0.2));
+      bind('#pdfZoomOut', () => this._pdfZoom(-0.2));
+    }
+    // 单模型模式：顶部仅标题，无其他按钮
+    if (this.standalone) return;
+    // 多窗口模式按钮
+    this.deleteBtn.addEventListener('click', () => this.dispose());
+    this.fullscreenBtn.addEventListener('click', () => this.openFullscreen());
+    this.linkBtn.addEventListener('click', () => this.copyLink());
+  }
+
+  /* ---------- 复制本窗口独立链接（短链：配置存服务器，链接只带短 ID） ---------- */
+  async copyLink() {
+    // 本地上传的模型（Blob URL）无法跨页面访问，不能生成独立链接
+    if (this.localFile) {
+      showToast('本地上传模型需先托管到服务器/CDN 获得公网地址，才能生成独立链接');
+      return;
+    }
+    if (this.linkBtn) {
+      this.linkBtn.disabled = true;
+      this.linkBtn.textContent = '生成中…';
+    }
+    try {
+      // 把窗口配置 POST 到服务器 /config，返回短 ID；文本再多也不会撑长 URL
+      // 已生成过的窗口带上既有 shortId，服务器会复用同一 ID 覆盖更新配置，
+      // 保证同一窗口每次复制得到相同的独立链接。
+      const cfg = {
+        url: this.url,
+        title: this.title || '',
+        text: this.config.text || '',
+        mp3: this.config.mp3 || '',
+        autoRotate: !!this.config.autoRotate,
+        rotateSpeed: this.config.rotateSpeed,
+        playAnimation: this.config.playAnimation,
+        animSpeed: this.config.animSpeed,
+        background: this.config.background || '#e8eaed',
+        volume: this.config.volume,
+        pdf: this.config.pdf || ''
+      };
+      // 优先使用主页配置的自定义固定 ID；否则用已生成记录的 ID；否则交给服务器生成。
+      let requestId = (typeof this.config.customId === 'string' ? this.config.customId : '').trim() || this.shortId || '';
+      if (!/^[A-Za-z0-9]{1,32}$/.test(requestId)) requestId = '';
+      if (requestId) cfg.id = requestId;
+      const resp = await fetch('/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg)
+      });
+      let data = {};
+      try { data = await resp.json(); } catch (e) {}
+      if (!resp.ok || !data.ok || !data.id) {
+        throw new Error((data && data.error) || ('短链生成失败（HTTP ' + resp.status + '）'));
+      }
+      this.shortId = data.id; // 记住，供下次复用
+      const shortUrl = location.origin + location.pathname + '?id=' + encodeURIComponent(data.id);
+      _copyText(shortUrl);
+    } catch (err) {
+      console.error('短链生成失败', err);
+      showToast('短链生成失败：' + err.message);
+    } finally {
+      if (this.linkBtn) {
+        this.linkBtn.disabled = false;
+        this.linkBtn.textContent = this.linkBtn.dataset.origText || '链接';
+      }
+    }
+  }
+
+  /* ---------- 单独打开：全屏独立视图 ---------- */
+  openFullscreen() {
+    if (this.fsOpen) return;
+    this.fsOpen = true;
+
+    const modal = document.getElementById('fullscreenModal');
+    const fsCanvas = document.getElementById('fsCanvas');
+    document.getElementById('fsTitle').textContent = this.title;
+    modal.classList.add('open');
+    fsViewer = this;
+
+    // 全屏视图使用独立的渲染器与相机，但共享同一个场景（模型与动画）
+    const w = fsCanvas.clientWidth || 1200;
+    const h = fsCanvas.clientHeight || 700;
+    this.fsRenderer = new THREE.WebGLRenderer({ antialias: true });
+    this.fsRenderer.setSize(w, h);
+    this.fsRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.fsRenderer.outputEncoding = THREE.sRGBEncoding;
+    fsCanvas.appendChild(this.fsRenderer.domElement);
+
+    this.fsCamera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
+    // 从主相机复制当前视角，保持查看位置一致
+    this.fsCamera.position.copy(this.camera.position);
+    this.fsCamera.near = this.camera.near;
+    this.fsCamera.far = this.camera.far;
+    this.fsCamera.updateProjectionMatrix();
+
+    this.fsControls = new THREE.OrbitControls(this.fsCamera, this.fsRenderer.domElement);
+    this.fsControls.enableDamping = true;
+    this.fsControls.dampingFactor = 0.08;
+    this.fsControls.screenSpacePanning = true;
+    this.fsControls.target.copy(this.controls.target);
+    this.fsControls.minDistance = this.controls.minDistance;
+    this.fsControls.maxDistance = this.controls.maxDistance;
+    // 应用本窗口配置
+    this._applyConfigToControls(this.fsControls);
+    this.fsControls.update();
+
+    // 等布局稳定后重新适配一次画布尺寸
+    setTimeout(() => this._onFsResize(), 30);
+  }
+
+  /* ---------- 关闭全屏视图 ---------- */
+  closeFullscreen() {
+    if (!this.fsOpen) return;
+    this.fsOpen = false;
+
+    const fsCanvas = document.getElementById('fsCanvas');
+    if (this.fsControls) { this.fsControls.dispose(); this.fsControls = null; }
+    if (this.fsRenderer) {
+      this.fsRenderer.dispose();
+      if (this.fsRenderer.domElement && this.fsRenderer.domElement.parentNode) {
+        this.fsRenderer.domElement.parentNode.removeChild(this.fsRenderer.domElement);
+      }
+      this.fsRenderer = null;
+    }
+    this.fsCamera = null;
+    document.getElementById('fullscreenModal').classList.remove('open');
+    if (fsViewer === this) fsViewer = null;
+  }
+
+  /* ---------- 全屏画布尺寸自适应 ---------- */
+  _onFsResize() {
+    if (!this.fsOpen || !this.fsRenderer) return;
+    const fsCanvas = document.getElementById('fsCanvas');
+    const w = fsCanvas.clientWidth;
+    const h = fsCanvas.clientHeight;
+    if (w === 0 || h === 0) return;
+    this.fsCamera.aspect = w / h;
+    this.fsCamera.updateProjectionMatrix();
+    this.fsRenderer.setSize(w, h);
+  }
+
+  /* ---------- 渲染全屏视图（由全局循环调用） ---------- */
+  renderFullscreen() {
+    if (!this.fsOpen || !this.fsRenderer) return;
+    this.fsControls.update();
+    this.fsRenderer.render(this.scene, this.fsCamera);
+  }
+
+  /* ---------- 应用本窗口独立配置 ---------- */
+  applyConfig() {
+    // 主视图控制
+    this._applyConfigToControls(this.controls);
+    // 动画
+    if (this.mixer) {
+      this.mixer.timeScale = this.config.playAnimation ? this.config.animSpeed : 0;
+    }
+    // 背景色
+    this.scene.background.set(this.config.background);
+    // 展示文本
+    if (this.textEl) this.textEl.textContent = this.config.text || '';
+    // 背景音乐：地址变化时重建音频对象
+    if (this.audio && this.config.mp3 && this._absUrl(this._finalizedMp3()) !== this._absUrl(this.audio.getAttribute('src'))) {
+      this.audio.pause();
+      this.audio = null;
+      this.audioPlaying = false;
+      this._updateAudioUI();
+    }
+    // 全屏视图若打开，同步配置
+    if (this.fsOpen) {
+      this._applyConfigToControls(this.fsControls);
+      this.scene.background.set(this.config.background);
+    }
+  }
+
+  /* ---------- 把配置应用到指定控制器 ---------- */
+  _applyConfigToControls(controls) {
+    controls.autoRotate = this.config.autoRotate;
+    controls.autoRotateSpeed = this.config.rotateSpeed * 2.0; // 基准 2.0，按倍数缩放
+  }
+
+  /* ---------- 重置视角到初始状态 ---------- */
+  resetView() {
+    if (this.initialCameraPos && this.initialTarget) {
+      this.camera.position.copy(this.initialCameraPos);
+      this.controls.target.copy(this.initialTarget);
+      this.controls.update();
+    }
+  }
+
+  /* ---------- 每帧渲染（由全局循环调用） ---------- */
+  render() {
+    if (this.isDisposed) return;
+    // 推进本窗口动画（独立时钟，窗口之间互不干扰）
+    if (this.mixer) {
+      const delta = this.clock.getDelta();
+      this.mixer.update(delta);
+      // 动画运行若干帧后重新适配视角一次（覆盖动画位移 / 部件展开），避免模型跑出视野
+      if (this._refitFramesLeft > 0) {
+        this._refitFramesLeft--;
+        if (this._refitFramesLeft === 0) {
+          this._fitModelToView(this.model);
+        }
+      }
+    }
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  /* ---------- 销毁实例，释放所有 GPU / DOM 资源 ---------- */
+  dispose() {
+    if (this.isDisposed) return;
+    this.isDisposed = true;
+
+    // 若在全屏视图，先关闭
+    if (this.fsOpen) this.closeFullscreen();
+
+    // 停止尺寸监听
+    if (this.resizeObserver) this.resizeObserver.disconnect();
+
+    // 释放动画（停止所有 Action，断开动画关联）
+    if (this.mixer) {
+      this.mixer.stopAllAction();
+      this.mixer = null;
+      this.clock = null;
+    }
+
+    // 释放背景音乐
+    if (this.audio) {
+      this.audio.pause();
+      this.audio = null;
+      this.audioPlaying = false;
+    }
+
+    // 释放控制器
+    if (this.controls) this.controls.dispose();
+
+    // 遍历场景释放几何体 / 材质 / 纹理
+    if (this.scene) {
+      this.scene.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+          materials.forEach((mat) => {
+            // 释放材质上的所有纹理
+            Object.values(mat).forEach((val) => {
+              if (val && val.isTexture) val.dispose();
+            });
+            mat.dispose();
+          });
+        }
+      });
+    }
+
+    // 释放渲染器（WebGL 上下文）
+    if (this.renderer) {
+      this.renderer.dispose();
+      if (this.renderer.domElement && this.renderer.domElement.parentNode) {
+        this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+      }
+    }
+
+    // 清理 PDF 弹窗状态
+    if (this.pdfModal) {
+      this._pdfDoc = null;
+      const c = this.pdfModal.querySelector('canvas');
+      if (c) { c.width = 1; c.height = 1; }
+    }
+
+    // 从 DOM 移除卡片
+    if (this.card && this.card.parentNode) {
+      this.card.parentNode.removeChild(this.card);
+    }
+
+    // 从全局数组移除
+    const idx = viewers.indexOf(this);
+    if (idx > -1) viewers.splice(idx, 1);
+
+    _updateEmptyState();
+    _saveWindows(); // 持久化：删除后同步保存
+  }
+}
+
+/* ================================================================
+ *  全局动画循环 —— 统一驱动所有 viewer
+ * ================================================================ */
+function animate() {
+  requestAnimationFrame(animate);
+  for (let i = 0; i < viewers.length; i++) {
+    viewers[i].render();
+  }
+  // 若存在全屏独立视图，额外渲染它（共享场景与动画）
+  if (fsViewer) fsViewer.renderFullscreen();
+}
+animate();
+
+/* ================================================================
+ *  控制面板逻辑
+ * ================================================================ */
+const clearBtn = document.getElementById('clearAllBtn');
+const newInstanceBtn = document.getElementById('newInstanceBtn');
+
+// 新建空白实例：无模型，可在配置面板里选择/上传模型
+function newInstance() {
+  const viewer = new ModelViewer({ title: '新实例', url: '', desc: '' });
+  viewers.push(viewer);
+  _updateEmptyState();
+  _saveWindows();
+  showToast('已新建空白实例');
+}
+newInstanceBtn.addEventListener('click', newInstance);
+
+/* ===== 上传模型：选择并上传到服务器 ===== */
+const fileInput = document.getElementById('modelFileInput');
+const uploadBtn = document.getElementById('uploadModelBtn');
+const musicUploadBtn = document.getElementById('uploadMusicBtn');
+const musicFileInput = document.getElementById('musicFileInput');
+const uploadPdfBtn = document.getElementById('uploadPdfBtn');
+const pdfTopFileInput = document.getElementById('pdfTopFileInput');
+const cfgMusicSelect = document.getElementById('cfgMusicSelect');
+const cfgMp3Upload = document.getElementById('cfgMp3Upload');
+const cfgMp3File = document.getElementById('cfgMp3File');
+const cfgPdf = document.getElementById('cfgPdf');
+const cfgPdfSelect = document.getElementById('cfgPdfSelect');
+const cfgPdfUpload = document.getElementById('cfgPdfUpload');
+const cfgPdfFile = document.getElementById('cfgPdfFile');
+const cfgModelSelect = document.getElementById('cfgModelSelect');
+const cfgModelUpload = document.getElementById('cfgModelUpload');
+const cfgModelFile = document.getElementById('cfgModelFile');
+const cfgInstanceName = document.getElementById('cfgInstanceName');
+
+// 将某窗口当前配置同步到其短链 ID（若已生成过），使独立页打开即用最新配置
+async function syncConfigToServer(viewer) {
+  if (!viewer || !viewer.shortId) return;
+  try {
+    const payload = {
+      id: viewer.shortId,
+      url: viewer.url || '',
+      title: viewer.title || '',
+      text: viewer.config.text || '',
+      mp3: viewer.config.mp3 || '',
+      autoRotate: !!viewer.config.autoRotate,
+      rotateSpeed: viewer.config.rotateSpeed,
+      playAnimation: viewer.config.playAnimation,
+      animSpeed: viewer.config.animSpeed,
+      background: viewer.config.background || '#e8eaed',
+      volume: viewer.config.volume,
+      pdf: viewer.config.pdf || ''
+    };
+    await fetch('/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  } catch (e) { console.warn('同步配置到短链失败', e); }
+}
+
+// 顶栏「上传 PDF」：上传到服务器 pdf 目录（不绑定实例；各实例配置面板 PDF 下拉可选择）
+async function uploadTopPdf(file) {
+  const orig = uploadPdfBtn.innerHTML;
+  uploadPdfBtn.disabled = true;
+  uploadPdfBtn.textContent = '上传中…';
+  try {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('save_dir', 'pdf');
+    const resp = await fetch(UPLOAD_API, { method: 'POST', body: fd });
+    let data = {};
+    try { data = await resp.json(); } catch (e) {}
+    if (!resp.ok || !data.ok) throw new Error((data && data.error) || ('上传失败（HTTP ' + resp.status + '）'));
+    showToast('PDF 已上传到服务器，可在各实例配置面板中选择');
+  } catch (err) {
+    console.error('PDF 上传失败', err);
+    showToast('PDF 上传失败：' + err.message);
+  } finally {
+    uploadPdfBtn.disabled = false;
+    uploadPdfBtn.innerHTML = orig;
+    pdfTopFileInput.value = '';
+  }
+}
+uploadPdfBtn.addEventListener('click', () => pdfTopFileInput.click());
+pdfTopFileInput.addEventListener('change', (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (f) uploadTopPdf(f);
+});
+
+// 上传单个 PDF 到服务器 pdf 目录（本实例独立配置，参考 MP3 的做法）
+async function uploadPdfToServer(file) {
+  const api = UPLOAD_API;
+  const origHTML = cfgPdfUpload.innerHTML;
+  cfgPdfUpload.disabled = true;
+  cfgPdfUpload.textContent = '上传中…';
+  try {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('save_dir', 'pdf');
+    const resp = await fetch(api, { method: 'POST', body: fd });
+    let data = {};
+    try { data = await resp.json(); } catch (e) {}
+    if (!resp.ok || !data.ok) throw new Error((data && data.error) || ('上传失败（HTTP ' + resp.status + '）'));
+    const pdfUrl = _finalizeModelUrl(data.url);
+    if (cfgViewer) {
+      cfgViewer.config.pdf = pdfUrl;
+      cfgPdf.value = pdfUrl;
+      _saveWindows();
+      syncConfigToServer(cfgViewer);
+    }
+    showToast('PDF 已上传并应用到本实例：' + data.filename);
+    await loadPdfList();
+  } catch (err) {
+    console.error('PDF 上传失败', err);
+    showToast('PDF 上传失败：' + err.message);
+  } finally {
+    cfgPdfUpload.disabled = false;
+    cfgPdfUpload.innerHTML = origHTML;
+    if (cfgPdfFile) cfgPdfFile.value = '';
+  }
+}
+
+// 刷新并填充「已上传 PDF」下拉列表
+async function loadPdfList() {
+  if (!cfgPdfSelect) return;
+  const currentVal = cfgPdfSelect.value || (cfgViewer ? (cfgViewer.config.pdf || '') : '');
+  try {
+    const resp = await fetch('/list?dir=pdf', { method: 'GET' });
+    let data = {};
+    try { data = await resp.json(); } catch (e) {}
+    cfgPdfSelect.innerHTML = '<option value="">— 请选择已上传 PDF —</option>';
+    let matched = false;
+    if (Array.isArray(data.files)) {
+      data.files.forEach((f) => {
+        const opt = document.createElement('option');
+        opt.value = _finalizeModelUrl(f.url);
+        opt.textContent = f.name;
+        opt.title = f.name;
+        cfgPdfSelect.appendChild(opt);
+        if (opt.value === currentVal) { opt.selected = true; matched = true; }
+      });
+    }
+    if (currentVal && !matched) {
+      const cur = document.createElement('option');
+      cur.value = currentVal;
+      cur.textContent = '当前已配置：' + (currentVal.split('/').pop() || currentVal);
+      cur.selected = true;
+      cfgPdfSelect.appendChild(cur);
+    }
+  } catch (err) {
+    console.warn('加载已上传 PDF 列表失败', err);
+  }
+}
+
+cfgPdfUpload.addEventListener('click', () => cfgPdfFile.click());
+cfgPdfFile.addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (file) uploadPdfToServer(file);
+});
+cfgPdfSelect.addEventListener('change', (e) => {
+  const v = e.target.value;
+  if (!cfgViewer || v === '') return;
+  cfgViewer.config.pdf = v;
+  cfgPdf.value = v;
+  _saveWindows();
+  syncConfigToServer(cfgViewer);
+});
+cfgPdf.addEventListener('input', (e) => {
+  if (cfgViewer) {
+    cfgViewer.config.pdf = e.target.value.trim();
+    _saveWindows();
+    syncConfigToServer(cfgViewer);
+  }
+});
+
+// —— 配置面板：模型 选择 + 上传（本实例），实例名称 ——
+async function loadModelList() {
+  if (!cfgModelSelect) return;
+  const currentVal = cfgViewer ? (cfgViewer.url || '') : '';
+  try {
+    const resp = await fetch('/list?dir=models', { method: 'GET' });
+    let data = {};
+    try { data = await resp.json(); } catch (e) {}
+    cfgModelSelect.innerHTML = '<option value="">— 请选择已上传模型 —</option>';
+    let matched = false;
+    if (Array.isArray(data.files)) {
+      data.files.forEach((f) => {
+        if (MODEL_EXTS.indexOf(fileExt(f.name)) < 0) return; // 只列模型文件
+        const opt = document.createElement('option');
+        opt.value = _finalizeModelUrl(f.url);
+        opt.textContent = f.name;
+        opt.title = f.path || f.name;
+        cfgModelSelect.appendChild(opt);
+        if (currentVal && _finalizeModelUrl(f.url) === currentVal) { opt.selected = true; matched = true; }
+      });
+    }
+    if (currentVal && !matched) {
+      const cur = document.createElement('option');
+      cur.value = currentVal;
+      cur.textContent = '当前模型：' + (currentVal.split('/').pop() || currentVal);
+      cur.selected = true;
+      cfgModelSelect.appendChild(cur);
+    }
+  } catch (e) { console.warn('加载模型列表失败', e); }
+}
+
+// 顶栏「上传模型」：只上传到服务器 models 目录（不直接建实例；各实例配置面板可选择）
+async function uploadModelsOnly(files) {
+  const mains = files.filter(isModelExt);
+  if (!mains.length) { showToast('请选择模型文件（.glb/.gltf/.obj/.fbx）'); return; }
+  const origHTML = uploadBtn.innerHTML;
+  uploadBtn.disabled = true;
+  uploadBtn.textContent = '上传中…';
+  let done = 0;
+  try {
+    for (const m of mains) {
+      const ext = fileExt(m.name);
+      const baseName = m.name.replace(/\.[^.]+$/, '');
+      const res = files.filter((f) => !isModelExt(f));
+      if (ext === 'obj') {
+        const lower = baseName.toLowerCase();
+        const aux = res.filter((r) => r.name.toLowerCase().indexOf(lower) === 0);
+        const sd = DEFAULT_MODEL_DIR + '/' + baseName;
+        await _uploadModelFile(m, sd);
+        for (const r of aux) { try { await _uploadModelFile(r, sd, false); } catch (e) { console.warn('资源上传失败', r.name, e); } }
+      } else {
+        await _uploadModelFile(m, DEFAULT_MODEL_DIR);
+      }
+      done++;
+    }
+    showToast(done > 1 ? ('已上传 ' + done + ' 个模型，可在实例配置中选择') : '模型已上传到服务器，可在实例配置中选择');
+  } catch (err) {
+    console.error('上传失败', err);
+    showToast('上传失败：' + err.message);
+  } finally {
+    uploadBtn.disabled = false;
+    uploadBtn.innerHTML = origHTML;
+  }
+}
+
+async function uploadModelForCurrent(files) {
+  const mains = files.filter(isModelExt);
+  if (!mains.length) { showToast('请选择模型文件（.glb/.gltf/.obj/.fbx）'); return; }
+  const orig = cfgModelUpload.innerHTML;
+  cfgModelUpload.disabled = true;
+  cfgModelUpload.textContent = '上传中…';
+  try {
+    const m = mains[0];
+    const ext = fileExt(m.name);
+    const baseName = m.name.replace(/\.[^.]+$/, '');
+    const res = files.filter((f) => !isModelExt(f));
+    let url;
+    if (ext === 'obj') {
+      const lower = baseName.toLowerCase();
+      const aux = res.filter((r) => r.name.toLowerCase().indexOf(lower) === 0);
+      const sd = DEFAULT_MODEL_DIR + '/' + baseName;
+      const d0 = await _uploadModelFile(m, sd);
+      for (const r of aux) { try { await _uploadModelFile(r, sd, false); } catch (err) { console.warn('资源上传失败', r.name, err); } }
+      url = _finalizeModelUrl(d0.url);
+    } else {
+      const data = await _uploadModelFile(m, DEFAULT_MODEL_DIR);
+      url = _finalizeModelUrl(data.url);
+    }
+    if (cfgViewer) cfgViewer.setModel(url);
+    _saveWindows();
+    showToast('模型已上传并应用到本实例');
+    await loadModelList();
+  } catch (err) {
+    console.error('上传失败', err);
+    showToast('上传失败：' + err.message);
+  } finally {
+    cfgModelUpload.disabled = false;
+    cfgModelUpload.innerHTML = orig;
+    cfgModelFile.value = '';
+  }
+}
+cfgModelUpload.addEventListener('click', () => cfgModelFile.click());
+cfgModelFile.addEventListener('change', (e) => {
+  const files = Array.from(e.target.files || []);
+  if (files.length) uploadModelForCurrent(files);
+});
+cfgModelSelect.addEventListener('change', (e) => {
+  const v = e.target.value;
+  if (!cfgViewer) return;
+  if (v) {
+    cfgViewer.setModel(v);
+    _saveWindows();
+    showToast('已切换模型');
+  }
+});
+cfgInstanceName.addEventListener('input', (e) => {
+  if (!cfgViewer) return;
+  cfgViewer.title = e.target.value.trim() || '未命名实例';
+  if (cfgViewer.titleEl) cfgViewer.titleEl.textContent = cfgViewer.title;
+  _saveWindows();
+});
+
+// 固定上传接口与模型保存目录（自定义 UI 已移除，固定同源 /upload）
+const UPLOAD_API = '/upload';
+const DEFAULT_MODEL_DIR = 'models';
+// 上传到服务器
+uploadBtn.addEventListener('click', () => { showToast('请选择要上传的模型文件'); fileInput.click(); });
+
+// 选择文件后上传到服务器
+fileInput.addEventListener('change', (e) => {
+  const files = Array.from(e.target.files || []);
+  showToast('已选择 ' + files.length + ' 个文件，开始上传…');
+  if (files.length === 0) return;
+  // 清空选择器，保证下次可以选择同一文件
+  fileInput.value = '';
+  try {
+    // 只上传模型到服务器（不直接建实例；可在各实例配置面板中选择该模型）
+    uploadModelsOnly(files);
+  } catch (err) {
+    console.error('上传模型出错', err);
+    showToast('出错：' + (err && err.message ? err.message : err));
+  }
+});
+
+/* ================================================================
+ *  背景音乐：上传到服务器 music 目录 + 下拉选择已上传 MP3
+ * ================================================================ */
+const MUSIC_DIR = 'music';
+
+// 上传单个 MP3 到服务器 music 目录
+async function uploadMusicToServer(file) {
+  const api = UPLOAD_API;
+  const origHTML = cfgMp3Upload.innerHTML;
+  cfgMp3Upload.disabled = true;
+  cfgMp3Upload.textContent = '上传中…';
+  try {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('save_dir', MUSIC_DIR); // 固定保存到 music 目录
+    const resp = await fetch(api, { method: 'POST', body: fd });
+    let data;
+    try { data = await resp.json(); } catch (e) { data = {}; }
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.error || ('上传失败（HTTP ' + resp.status + '）'));
+    }
+    const mp3Url = _finalizeModelUrl(data.url);
+    // 自动填入当前配置的 MP3 并应用到 viewer
+    if (document.getElementById('cfgMp3')) {
+      cfgViewer.config.mp3 = mp3Url;
+      document.getElementById('cfgMp3').value = mp3Url;
+      cfgViewer.applyConfig();
+      document.getElementById('cfgMp3Status').textContent = cfgViewer.config.mp3 ? '已配置' : '未配置';
+      _saveWindows();
+    }
+    showToast('MP3 已上传到服务器：' + data.filename);
+    await loadMusicList(true); // 上传成功后刷新下拉列表
+  } catch (err) {
+    console.error('MP3 上传失败', err);
+    showToast('MP3 上传失败：' + err.message);
+  } finally {
+    cfgMp3Upload.disabled = false;
+    cfgMp3Upload.innerHTML = origHTML;
+    if (cfgMp3File) cfgMp3File.value = '';
+  }
+}
+
+// 顶栏「上传音乐」：选择要上传的 MP3
+musicUploadBtn.addEventListener('click', () => musicFileInput.click());
+musicFileInput.addEventListener('change', (e) => {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  musicFileInput.value = '';
+  files.forEach((f) => uploadMusicToServer(f));
+});
+
+// 配置弹窗内「上传 MP3」按钮
+cfgMp3Upload.addEventListener('click', () => cfgMp3File.click());
+cfgMp3File.addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  uploadMusicToServer(file);
+});
+
+// 刷新并填充「已上传 MP3」下拉列表
+async function loadMusicList() {
+  if (!cfgMusicSelect) return;
+  // 记录当前已配置的 mp3 地址，确保重建后不丢失选中
+  const currentVal = cfgMusicSelect.value || (cfgViewer ? (cfgViewer.config.mp3 || '') : '');
+  try {
+    const resp = await fetch('/list?dir=' + MUSIC_DIR, { method: 'GET' });
+    let data = {};
+    try { data = await resp.json(); } catch (e) {}
+    // 只更新 options，保留原 <select> 元素及其 change 监听
+    cfgMusicSelect.innerHTML = '<option value="">— 请选择已上传 MP3 —</option>';
+    let matched = false;
+    if (Array.isArray(data.files)) {
+      data.files.forEach((f) => {
+        const opt = document.createElement('option');
+        opt.value = _finalizeModelUrl(f.url);
+        opt.textContent = f.name;
+        opt.title = f.name;
+        cfgMusicSelect.appendChild(opt);
+        if (opt.value === currentVal) { opt.selected = true; matched = true; }
+      });
+    }
+    // 已配置地址不在列表时，加一个自定义选中项，避免显示成“未配置”
+    if (currentVal && !matched) {
+      const cur = document.createElement('option');
+      cur.value = currentVal;
+      cur.textContent = '当前已配置：' + (currentVal.split('/').pop() || currentVal);
+      cur.selected = true;
+      cfgMusicSelect.appendChild(cur);
+    }
+  } catch (err) {
+    console.warn('加载已上传 MP3 列表失败', err);
+  }
+}
+
+// 下拉选择已上传 MP3
+cfgMusicSelect.addEventListener('change', (e) => {
+  const v = e.target.value;
+  if (!cfgViewer || v === '') return;
+  cfgViewer.config.mp3 = v;
+  document.getElementById('cfgMp3').value = v;
+  cfgViewer.applyConfig();
+  document.getElementById('cfgMp3Status').textContent = v ? '已配置' : '未配置';
+  _saveWindows();
+});
+
+
+
+/* ---- 上传到服务器 ---- */
+async function uploadModelToServer(file) {
+  const saveDir = DEFAULT_MODEL_DIR;
+  const api = UPLOAD_API;
+
+  // 按钮进入上传中状态
+  const origHTML = uploadBtn.innerHTML;
+  uploadBtn.disabled = true;
+  uploadBtn.textContent = '上传中…';
+  try {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('save_dir', saveDir);
+    const resp = await fetch(api, { method: 'POST', body: fd });
+    let data;
+    try { data = await resp.json(); } catch (e) { data = {}; }
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.error || ('上传失败（HTTP ' + resp.status + '）'));
+    }
+    const modelUrl = _finalizeModelUrl(data.url);
+    const sizeMB = (data.size / 1024 / 1024).toFixed(2);
+    const title = (file.name.replace(/\.[^.]+$/, '')) || data.filename || '模型';
+    const viewer = new ModelViewer({
+      title,
+      url: modelUrl,
+      desc: '已上传服务器：' + data.path + '（' + sizeMB + ' MB）'
+    });
+    viewers.push(viewer);
+    _updateEmptyState();
+    _saveWindows(); // 持久化：上传到服务器的模型刷新后保留
+    showToast('已上传到服务器：' + data.filename);
+  } catch (err) {
+    console.error('上传失败', err);
+    showToast('上传失败：' + err.message);
+  } finally {
+    uploadBtn.disabled = false;
+    uploadBtn.innerHTML = origHTML;
+  }
+}
+
+// 修正并安全化返回的 URL（修正 127.0.0.1 内网地址为当前域名；并对路径做编码，
+// 解决中文/空格文件名导致的 MP3/模型请求失败 000/404）
+function _finalizeModelUrl(u) {
+  if (!u) return u;
+  let hostFix = u;
+  // 1) 修正 host：127.0.0.1 / localhost -> 当前域名(含端口)，避免反代后丢端口
+  try {
+    const m = hostFix.match(/^https?:\/\/[^/?#]*/);
+    if (m) {
+      const host = m[0].replace(/^https?:\/\//, '');
+      if (/^(127\.0\.0\.1|localhost)([:/]|$)/i.test(host)) {
+        const prefix = hostFix.startsWith('https') ? 'https://' : 'http://';
+        hostFix = prefix + location.host + hostFix.slice(m[0].length);
+      }
+    }
+  } catch (e) {}
+  // 2) 对路径做安全编码：中文/空格等“未编码”字符转成 %xx，已存在的 %xx 转义原样保留（不做二次编码，避免 404）
+  try {
+    const urlObj = new URL(hostFix);
+    urlObj.pathname = urlObj.pathname
+      .split(/(%[0-9A-Fa-f]{2})/g)
+      .map((seg) => (/^%[0-9A-Fa-f]{2}$/.test(seg) ? seg : encodeURI(seg)))
+      .join('');
+    return urlObj.href;
+  } catch (e) {
+    return hostFix;
+  }
+}
+
+/* ================================================================
+ *  模型多文件选择分组：支持 .glb/.gltf/.obj/.fbx 及配套资源
+ * ================================================================ */
+const MODEL_EXTS = ['glb', 'gltf', 'obj', 'fbx'];
+function fileExt(name) {
+  // 防御：name 可能是字符串、File/对象（取其 .name），或任意值
+  if (typeof name !== 'string') {
+    name = (name && typeof name.name === 'string') ? name.name : '';
+  }
+  const m = /\.([a-z0-9]+)$/i.exec((name || '').trim());
+  return m ? m[1].toLowerCase() : '';
+}
+function isModelExt(name) {
+  // 兼容直接传 name 字符串，或被 files.filter 传入的元素（File）
+  const nm = (typeof name === 'string') ? name : (name && name.name) || '';
+  return MODEL_EXTS.indexOf(fileExt(nm)) >= 0;
+}
+
+// 本地预览：按主模型分组；OBJ 关联同批 .mtl/贴图，其它格式单文件
+function addModelFilesLocal(files) {
+  const mains = files.filter(isModelExt);
+  if (!mains.length) {
+    showToast('请选择 .glb / .gltf / .obj / .fbx 模型文件');
+    return;
+  }
+  const res = files.filter((f) => !isModelExt(f));
+  mains.forEach((m) => {
+    if (fileExt(m.name) === 'obj') {
+      addLocalObj(m, res);
+    } else {
+      addModelFromFile(m);
+    }
+  });
+  // 纯附属文件（无主模型）时提示
+  if (res.length && !mains.length) showToast('未识别到主模型文件');
+}
+
+// 本地 OBJ：把 obj + 同批 mtl/贴图 交给单个 viewer 加载
+function addLocalObj(objFile, resourceFiles) {
+  const title = objFile.name.replace(/\.[^.]+$/, '') || 'OBJ模型';
+  const sizeMB = (objFile.size / 1024 / 1024).toFixed(2);
+  const viewer = new ModelViewer({
+    title,
+    url: '',
+    desc: '本地文件：' + objFile.name + '（' + sizeMB + ' MB，OBJ）'
+  });
+  viewers.push(viewer);
+  _updateEmptyState();
+  _saveWindows();
+  viewer.loadLocalObj(objFile, resourceFiles);
+}
+
+// 上传到服务器：主模型上传到 models/；OBJ 用同名子目录携带配套资源
+async function addModelFilesToServer(files) {
+  const mains = files.filter(isModelExt);
+  if (!mains.length) {
+    showToast('请选择 .glb / .gltf / .obj / .fbx 模型文件');
+    return;
+  }
+  const res = files.filter((f) => !isModelExt(f));
+  const origHTML = uploadBtn.innerHTML;
+  uploadBtn.disabled = true;
+  uploadBtn.textContent = '上传中…';
+  try {
+    for (const m of mains) {
+      const ext = fileExt(m.name);
+      const baseName = m.name.replace(/\.[^.]+$/, '');
+      let saveDir = DEFAULT_MODEL_DIR;
+      let aux = [];
+      if (ext === 'obj') {
+        // OBJ：建同名子目录，并把前缀匹配的配套资源一并上传（mtl/贴图应放同一目录）
+        const lower = baseName.toLowerCase();
+        aux = res.filter((r) => r.name.toLowerCase().indexOf(lower) === 0);
+        saveDir = DEFAULT_MODEL_DIR + '/' + baseName;
+      }
+      const data = await _uploadModelFile(m, saveDir);
+      for (const r of aux) {
+        try { await _uploadModelFile(r, saveDir, false); } catch (err) { console.warn('资源上传失败', r.name, err); }
+      }
+      const url = _finalizeModelUrl(data.url);
+      const sizeMB = (data.size / 1024 / 1024).toFixed(2);
+      const viewer = new ModelViewer({
+        title: baseName,
+        url,
+        desc: '已上传服务器：' + data.path + '（' + sizeMB + ' MB）'
+      });
+      viewers.push(viewer);
+    }
+    _updateEmptyState();
+    _saveWindows();
+    showToast(mains.length > 1 ? ('已上传 ' + mains.length + ' 个模型') : '已上传到服务器');
+  } catch (err) {
+    console.error('上传失败', err);
+    showToast('上传失败：' + err.message);
+  } finally {
+    uploadBtn.disabled = false;
+    uploadBtn.innerHTML = origHTML;
+  }
+}
+
+async function _uploadModelFile(file, saveDir, autoWindow) {
+  const fd = new FormData();
+  fd.append('file', file, file.name);
+  fd.append('save_dir', saveDir);
+  const resp = await fetch(UPLOAD_API, { method: 'POST', body: fd });
+  let data = {};
+  try { data = await resp.json(); } catch (e) {}
+  if (!resp.ok || !data.ok) {
+    throw new Error((data && data.error) || ('上传失败（HTTP ' + resp.status + '）'));
+  }
+  return data;
+}
+
+// 从本地文件创建模型窗口（仅本地预览，不上传服务器）
+function addModelFromFile(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  const title = file.name.replace(/\.[^.]+$/, '') || '本地模型';
+  const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+  const desc = '本地文件：' + file.name + '（' + sizeMB + ' MB，' + ext.toUpperCase() + '）';
+
+  const viewer = new ModelViewer({
+    title,
+    url: '',
+    localFile: file,
+    desc
+  });
+  viewers.push(viewer);
+  _updateEmptyState();
+  // 本地上传窗口（Blob URL）无法跨刷新恢复，仅保存其余 URL 窗口
+  _saveWindows();
+}
+
+// 清空全部窗口
+clearBtn.addEventListener('click', () => {
+  if (viewers.length === 0) return;
+  if (!confirm('确定要删除所有模型窗口吗？')) return;
+  // 从后往前销毁，避免数组遍历问题
+  while (viewers.length > 0) {
+    viewers[viewers.length - 1].dispose();
+  }
+});
+
+/* ================================================================
+ *  全屏独立视图：按钮事件
+ * ================================================================ */
+const fsModal = document.getElementById('fullscreenModal');
+document.getElementById('fsCloseBtn').addEventListener('click', () => {
+  if (fsViewer) fsViewer.closeFullscreen();
+});
+document.getElementById('fsResetBtn').addEventListener('click', () => {
+  if (fsViewer && fsViewer.fsOpen) {
+    // 全屏视角重置到主视图保存的初始视角
+    if (fsViewer.initialCameraPos && fsViewer.initialTarget) {
+      fsViewer.fsCamera.position.copy(fsViewer.initialCameraPos);
+      fsViewer.fsControls.target.copy(fsViewer.initialTarget);
+      fsViewer.fsControls.update();
+    }
+  }
+});
+document.getElementById('fsConfigBtn').addEventListener('click', (e) => {
+  e.stopPropagation(); // 防止被外部点击关闭逻辑误关
+  if (fsViewer) openConfigPopover(fsViewer, e.currentTarget);
+});
+// Esc 键关闭全屏
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && fsViewer && fsViewer.fsOpen) {
+    fsViewer.closeFullscreen();
+  }
+});
+// 窗口尺寸变化时，全屏视图同步自适应
+window.addEventListener('resize', () => {
+  if (fsViewer) fsViewer._onFsResize();
+});
+
+/* ================================================================
+ *  配置浮层：每个窗口独立一套配置值
+ * ================================================================ */
+const configPopover = document.getElementById('configPopover');
+let cfgViewer = null; // 当前配置浮层对应的 viewer
+
+// 背景色预设
+const BG_COLORS = [
+  { name: '浅灰', value: '#e8eaed' },
+  { name: '纯白', value: '#ffffff' },
+  { name: '深灰', value: '#374151' },
+  { name: '黑色', value: '#111827' },
+  { name: '藏蓝', value: '#1e3a5f' },
+  { name: '墨绿', value: '#14532d' },
+  { name: '暖米', value: '#f5f0e6' }
+];
+
+// 初始化配置浮层控件与色块
+(function initConfigPopover() {
+  const colorsBox = document.getElementById('cfgColors');
+  BG_COLORS.forEach((c) => {
+    const dot = document.createElement('div');
+    dot.className = 'cfg-color';
+    dot.style.background = c.value;
+    dot.dataset.color = c.value;
+    dot.title = c.name;
+    colorsBox.appendChild(dot);
+  });
+  document.getElementById('cfgCloseBtn').addEventListener('click', closeConfigPopover);
+  // 点击浮层外部关闭
+  document.addEventListener('click', (e) => {
+    if (configPopover.classList.contains('open') &&
+        !configPopover.contains(e.target) &&
+        !e.target.closest('.btn-icon')) {
+      closeConfigPopover();
+    }
+  });
+})();
+
+// 打开配置浮层（anch 为触发按钮，用于定位）
+function openConfigPopover(viewer, anchor) {
+  cfgViewer = viewer;
+  document.getElementById('cfgTitle').textContent = viewer.title + ' · 配置';
+
+  // 用控件当前值填充（不触发 change 回调的副作用）
+  document.getElementById('cfgRotate').checked = viewer.config.autoRotate;
+  document.getElementById('cfgRotateSpeed').value = viewer.config.rotateSpeed;
+  document.getElementById('cfgRotateSpeedVal').textContent = viewer.config.rotateSpeed.toFixed(1) + 'x';
+  document.getElementById('cfgAnim').checked = viewer.config.playAnimation;
+  document.getElementById('cfgAnimSpeed').value = viewer.config.animSpeed;
+  document.getElementById('cfgAnimSpeedVal').textContent = viewer.config.animSpeed.toFixed(1) + 'x';
+  // 高亮当前背景色
+  document.querySelectorAll('#cfgColors .cfg-color').forEach((dot) => {
+    dot.classList.toggle('active', dot.dataset.color === viewer.config.background);
+  });
+  // 展示文本 与 背景音乐
+  document.getElementById('cfgText').value = viewer.config.text || '';
+  document.getElementById('cfgMp3').value = viewer.config.mp3 || '';
+  document.getElementById('cfgCustomId').value = viewer.config.customId || '';
+  document.getElementById('cfgMp3Status').textContent = viewer.config.mp3 ? '已配置' : '未配置';
+  document.getElementById('cfgPdf').value = viewer.config.pdf || '';
+  document.getElementById('cfgInstanceName').value = viewer.title || '';
+
+  // 打开配置窗时刷新「已上传 MP3 / PDF / 模型」下拉（并高亮当前选中）
+  loadMusicList();
+  loadPdfList();
+  loadModelList();
+
+  // 定位浮层在触发按钮下方
+  const r = anchor.getBoundingClientRect();
+  configPopover.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 308)) + 'px';
+  configPopover.style.top = (r.bottom + 8) + 'px';
+  // 若超出底部，翻到按钮上方
+  const popH = 460;
+  if (r.bottom + 8 + popH > window.innerHeight) {
+    configPopover.style.top = Math.max(8, r.top - popH - 8) + 'px';
+  }
+  configPopover.classList.add('open');
+}
+
+function closeConfigPopover() {
+  configPopover.classList.remove('open');
+  cfgViewer = null;
+}
+
+// 控件事件：修改后即时生效到对应 viewer
+document.getElementById('cfgRotate').addEventListener('change', (e) => {
+  if (cfgViewer) { cfgViewer.config.autoRotate = e.target.checked; cfgViewer.applyConfig(); _saveWindows(); }
+});
+document.getElementById('cfgRotateSpeed').addEventListener('input', (e) => {
+  if (cfgViewer) {
+    cfgViewer.config.rotateSpeed = parseFloat(e.target.value);
+    document.getElementById('cfgRotateSpeedVal').textContent = cfgViewer.config.rotateSpeed.toFixed(1) + 'x';
+    cfgViewer.applyConfig();
+    _saveWindows();
+  }
+});
+document.getElementById('cfgAnim').addEventListener('change', (e) => {
+  if (cfgViewer) { cfgViewer.config.playAnimation = e.target.checked; cfgViewer.applyConfig(); _saveWindows(); }
+});
+document.getElementById('cfgAnimSpeed').addEventListener('input', (e) => {
+  if (cfgViewer) {
+    cfgViewer.config.animSpeed = parseFloat(e.target.value);
+    document.getElementById('cfgAnimSpeedVal').textContent = cfgViewer.config.animSpeed.toFixed(1) + 'x';
+    cfgViewer.applyConfig();
+    _saveWindows();
+  }
+});
+document.getElementById('cfgColors').addEventListener('click', (e) => {
+  const dot = e.target.closest('.cfg-color');
+  if (!dot || !cfgViewer) return;
+  cfgViewer.config.background = dot.dataset.color;
+  document.querySelectorAll('#cfgColors .cfg-color').forEach((d) => {
+    d.classList.toggle('active', d === dot);
+  });
+  cfgViewer.applyConfig();
+  _saveWindows();
+});
+
+// 展示文本：实时更新到模型下方，并保存
+document.getElementById('cfgText').addEventListener('input', (e) => {
+  if (cfgViewer) {
+    cfgViewer.config.text = e.target.value;
+    cfgViewer.applyConfig();
+    _saveWindows();
+  }
+});
+
+// 独立链接自定义 ID
+document.getElementById('cfgCustomId').addEventListener('input', (e) => {
+  if (!cfgViewer) return;
+  const v = e.target.value.trim();
+  // 仅允许字母/数字，1-32 位
+  if (v && !/^[A-Za-z0-9]{1,32}$/.test(v)) {
+    e.target.value = cfgViewer.config.customId || '';
+    showToast('ID 仅含字母或数字，1-32 位');
+    return;
+  }
+  cfgViewer.config.customId = v;
+  _saveWindows();
+});
+
+// 背景音乐地址
+document.getElementById('cfgMp3').addEventListener('input', (e) => {
+  if (cfgViewer) {
+    cfgViewer.config.mp3 = e.target.value.trim();
+    cfgViewer.applyConfig();
+    document.getElementById('cfgMp3Status').textContent = cfgViewer.config.mp3 ? '已配置' : '未配置';
+    _saveWindows();
+  }
+});
+
+// 试听 / 停止
+document.getElementById('cfgMp3Play').addEventListener('click', () => {
+  if (!cfgViewer) return;
+  if (cfgViewer.audioPlaying) {
+    cfgViewer.pauseAudio();
+    document.getElementById('cfgMp3Play').textContent = '试听 / 停止';
+  } else {
+    cfgViewer.playAudio();
+    document.getElementById('cfgMp3Play').textContent = cfgViewer.audioPlaying ? '停止' : '试听 / 停止';
+  }
+});
+
+/* ================================================================
+ *  工具函数
+ * ================================================================ */
+
+// 从 URL 中提取文件名作为默认标题
+function _extractFileName(url) {
+  try {
+    const pathname = new URL(url, window.location.href).pathname;
+    const name = pathname.substring(pathname.lastIndexOf('/') + 1);
+    return decodeURIComponent(name) || '自定义模型';
+  } catch (e) {
+    return '自定义模型';
+  }
+}
+
+// 轻量 toast 提示
+let _toastTimer = null;
+function showToast(msg) {
+  let t = document.querySelector('.toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.className = 'toast';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+// 复制文本到剪贴板（优先 Clipboard API，失败时降级为 execCommand）
+function _copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(
+      () => showToast('已复制独立链接'),
+      () => _fallbackCopy(text)
+    );
+  } else {
+    _fallbackCopy(text);
+  }
+}
+function _fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand('copy');
+    showToast('已复制独立链接');
+  } catch (e) {
+    showToast('复制失败，请手动复制');
+  }
+  document.body.removeChild(ta);
+}
+
+/* ================================================================
+ *  本地持久化（localStorage）：添加的模型与各窗口配置刷新后保留
+ * ================================================================ */
+const STORAGE_KEY = 'm3d_viewer_windows_v1';
+
+// 把当前所有窗口保存到 localStorage
+function _saveWindows() {
+  const data = viewers
+    .map((v) => ({
+      url: v.url || '',
+      title: v.title || '',
+      desc: v.desc || '',
+      shortId: v.shortId || '',
+      config: {
+        autoRotate: v.config.autoRotate,
+        rotateSpeed: v.config.rotateSpeed,
+        playAnimation: v.config.playAnimation,
+        animSpeed: v.config.animSpeed,
+        background: v.config.background,
+        text: v.config.text || '',
+        mp3: v.config.mp3 || '',
+        volume: v.config.volume,
+        customId: (typeof v.config.customId === 'string' ? v.config.customId : '').trim(),
+        pdf: v.config.pdf || ''
+      }
+    }));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.warn('保存窗口配置失败', e);
+  }
+}
+
+// 读取保存的窗口配置：无保存返回 null；保存过（含空数组=已清空）返回数组
+function _loadWindows() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw === null) return null; // 从未保存过
+    const data = JSON.parse(raw);
+    if (Array.isArray(data)) {
+      return data.map((w) => ({
+        url: w.url,
+        title: w.title,
+        desc: w.desc,
+        config: Object.assign({
+          autoRotate: false, rotateSpeed: 1, playAnimation: true,
+          animSpeed: 1, background: '#e8eaed', text: '', mp3: '', volume: 1, customId: '', pdf: ''
+        }, w.config || {})
+      }));
+    }
+  } catch (e) { /* 解析失败则当作无保存 */ }
+  return null;
+}
+
+// 空状态提示
+let emptyEl = null;
+function _updateEmptyState() {
+  if (viewers.length === 0) {
+    if (!emptyEl) {
+      emptyEl = document.createElement('div');
+      emptyEl.className = 'empty-state';
+      emptyEl.innerHTML = '<p>暂无模型窗口，可点击「上传本地模型」选择 .glb / .gltf / .obj / .fbx 文件，或在上方输入模型地址后点击「添加模型」</p>';
+      grid.appendChild(emptyEl);
+    }
+  } else {
+    if (emptyEl && emptyEl.parentNode) {
+      emptyEl.parentNode.removeChild(emptyEl);
+      emptyEl = null;
+    }
+  }
+}
+
+/* ================================================================
+ *  初始化：内置 4 个示例模型
+ *  模型来源：Three.js 官方仓库示例模型（jsDelivr CDN 代理，支持 CORS）
+ * ================================================================ */
+const demoModels = [
+  {
+    title: '火烈鸟 Flamingo',
+    url: 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/Flamingo.glb',
+    desc: '挥翅飞行的火烈鸟，自带飞行动画，加载后自动循环播放。'
+  },
+  {
+    title: '骏马 Horse',
+    url: 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/Horse.glb',
+    desc: '奔跑中的骏马，自带奔跑动画，加载后自动循环播放，可观察骨骼蒙皮效果。'
+  },
+  {
+    title: '鹦鹉 Parrot',
+    url: 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/Parrot.glb',
+    desc: '扑翅的鹦鹉，自带动画，加载后自动循环播放。'
+  },
+  {
+    title: '鹳 Stork',
+    url: 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/Stork.glb',
+    desc: '展翅滑翔的鹳，自带飞行姿态动画，加载后自动循环播放。'
+  }
+];
+
+/* ================================================================
+ *  初始化：解析 URL 参数
+ *  - 带 ?url= 参数 → 单模型模式（独立链接 / 全景热点嵌入）
+ *  - 无参数        → 多窗口模式（4 个内置示例 + 控制面板）
+ * ================================================================ */
+const queryParams = new URLSearchParams(location.search);
+const queryUrl = queryParams.get('url');
+const queryId = queryParams.get('id');
+
+/* 构造单模型（全景热点纯净展示）viewer，并应用配置 */
+function buildStandaloneViewer(url, cfg) {
+  const v = new ModelViewer({
+    title: (cfg && cfg.title) || _extractFileName(url),
+    url,
+    desc: url,
+    standalone: true
+  });
+  if (cfg) {
+    if (cfg.autoRotate) v.config.autoRotate = true;
+    if (cfg.rotateSpeed) v.config.rotateSpeed = parseFloat(cfg.rotateSpeed) || 1;
+    if (cfg.playAnimation === false) v.config.playAnimation = false;
+    if (cfg.animSpeed) v.config.animSpeed = parseFloat(cfg.animSpeed) || 1;
+    if (cfg.background) v.config.background = cfg.background;
+    if (cfg.text) v.config.text = cfg.text;
+    if (cfg.mp3) v.config.mp3 = cfg.mp3;
+    if (cfg.volume) v.config.volume = cfg.volume;
+    if (cfg.pdf) v.config.pdf = cfg.pdf;
+  } else {
+    // 兼容旧的 ?url=&text=&mp3= 全参数版链接
+    if (queryParams.get('autoRotate') === '1' || queryParams.get('rotate') === '1') v.config.autoRotate = true;
+    if (queryParams.get('rotateSpeed')) v.config.rotateSpeed = parseFloat(queryParams.get('rotateSpeed')) || 1;
+    if (queryParams.get('anim') === '0') v.config.playAnimation = false;
+    if (queryParams.get('animSpeed')) v.config.animSpeed = parseFloat(queryParams.get('animSpeed')) || 1;
+    if (queryParams.get('bg')) v.config.background = '#' + queryParams.get('bg');
+    if (queryParams.get('text')) v.config.text = queryParams.get('text');
+    if (queryParams.get('mp3')) v.config.mp3 = queryParams.get('mp3');
+  }
+  v.applyConfig();
+  // 独立短链页：默认折叠展示文本（点击底部文本按钮可展开）
+  if (v.standalone && v.textEl) v.textEl.classList.add('collapsed');
+  viewers.push(v);
+  _updateEmptyState();
+  // 独立短链页：配置了 MP3 时自动播放。
+  // 浏览器会拦截“无用户交互”的自动播放，因此同时监听页面首次交互（点击/触摸/按键），
+  // 一旦用户点了页面任意位置就自动开声，避免还要专门去找播放按钮。
+  if (v.standalone && v.config.mp3) {
+    // 封面：先尝试 muted 自动起播；若被浏览器拦截，显示“点击开始播放”浮层，点击即可出声并消失
+    const cover = _createPlayCover(v);
+    setTimeout(() => {
+      v.playAudioAuto();
+      // mute 起播成功则自动移除封面，让音乐直接播放
+      setTimeout(() => { if (v.audioPlaying) cover.remove(); }, 800);
+    }, 400);
+    // 兜底：首次交互仍未播放时再触发一次
+    const onFirstInteraction = (ev) => {
+      if (!v.audioPlaying) v.playAudioAuto();
+      document.removeEventListener('pointerdown', onFirstInteraction);
+      document.removeEventListener('touchstart', onFirstInteraction);
+      document.removeEventListener('keydown', onFirstInteraction);
+      if (v.audioPlaying) cover.remove();
+    };
+    document.addEventListener('pointerdown', onFirstInteraction, { passive: true });
+    document.addEventListener('touchstart', onFirstInteraction, { passive: true });
+    document.addEventListener('keydown', onFirstInteraction);
+  }
+  return v;
+}
+
+/* 独立短链页的“点击开始播放”封面（浏览器自动播放被拦截时的可用入口） */
+function _createPlayCover(viewer) {
+  const cover = document.createElement('div');
+  cover.className = 'play-cover';
+  cover.innerHTML =
+    '<div class="play-cover-inner">' +
+      '<div class="play-cover-btn">▶</div>' +
+      '<div class="play-cover-text">点击开始播放</div>' +
+    '</div>';
+  document.body.appendChild(cover);
+  cover.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    viewer.playAudio();
+    cover.remove();
+  });
+  return cover;
+}
+
+if (queryId) {
+  // ---- 短链模式：从服务器读取配置，模型地址/文本等不会撑长 URL ----
+  (async () => {
+    try {
+      const resp = await fetch('/config/' + encodeURIComponent(queryId), { method: 'GET' });
+      let data = {};
+      try { data = await resp.json(); } catch (e) {}
+      if (!resp.ok || !data.ok || !data.config || !data.config.url) {
+        throw new Error((data && data.error) || '短链无效或已失效');
+      }
+      const v = buildStandaloneViewer(data.config.url, data.config);
+      // 兜底：服务器短链 config 可能因历史原因缺 pdf，从本地 localStorage 匹配该窗口配置的 PDF
+      if (v && data.config && !data.config.pdf) {
+        try {
+          const saved = _loadWindows();
+          if (Array.isArray(saved)) {
+            const w = saved.find((x) => x.shortId === queryId);
+            if (w && w.config && w.config.pdf) {
+              v.config.pdf = _finalizeModelUrl(w.config.pdf);
+            }
+          }
+        } catch (e) { console.warn('恢复本地 PDF 失败', e); }
+      }
+    } catch (err) {
+      console.error('读取短链配置失败', err);
+      showToast('读取链接配置失败：' + err.message);
+    }
+  })();
+} else if (queryUrl) {
+  // ---- 单模型模式（旧链接或未用短链） ----
+  const title = queryParams.get('title') || _extractFileName(queryUrl);
+  const viewer = new ModelViewer({
+    title,
+    url: queryUrl,
+    desc: queryUrl,
+    standalone: true
+  });
+  // 应用 URL 携带的配置（全景热点可自定义每个热点的展示）
+  if (queryParams.get('autoRotate') === '1' || queryParams.get('rotate') === '1') {
+    viewer.config.autoRotate = true;
+  }
+  if (queryParams.get('rotateSpeed')) {
+    viewer.config.rotateSpeed = parseFloat(queryParams.get('rotateSpeed')) || 1;
+  }
+  if (queryParams.get('anim') === '0') {
+    viewer.config.playAnimation = false;
+  }
+  if (queryParams.get('animSpeed')) {
+    viewer.config.animSpeed = parseFloat(queryParams.get('animSpeed')) || 1;
+  }
+  if (queryParams.get('bg')) {
+    viewer.config.background = '#' + queryParams.get('bg');
+  }
+  if (queryParams.get('text')) {
+    viewer.config.text = queryParams.get('text');
+  }
+  if (queryParams.get('mp3')) {
+    viewer.config.mp3 = queryParams.get('mp3');
+  }
+  viewer.applyConfig();
+  viewers.push(viewer);
+  _updateEmptyState();
+
+} else {
+  // ---- 多窗口模式：优先恢复本地保存的窗口配置，否则创建 4 个内置示例 ----
+  const saved = _loadWindows();
+  if (saved !== null) {
+    // 有保存记录（可能为空数组 = 用户已清空，保持为空）
+    saved.forEach((w) => {
+      const viewer = new ModelViewer({ title: w.title, url: w.url || '', desc: w.desc, config: w.config });
+      viewer.shortId = w.shortId || ''; // 恢复历史短链 ID，保证刷新后链接仍稳定
+      viewers.push(viewer);
+    });
+  } else {
+    // 从未保存过：创建 4 个内置示例
+    demoModels.forEach((m) => {
+      const viewer = new ModelViewer({ title: m.title, url: m.url, desc: m.desc });
+      viewers.push(viewer);
+    });
+  }
+  // 保存当前窗口（首次为默认 4 个，之后为用户已保存的配置）
+  _saveWindows();
+  _updateEmptyState();
+}
+
+loadMusicList();
+</script>
+</body>
+</html>
