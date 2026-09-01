@@ -1,7 +1,5 @@
 # 3D 模型全景热点展示系统
 
-720 云的 3D 空间和 3D 模型展示是两套独立会员，单纯为了去除广告开通会员性价比太低，索性让AI写了一套 3D 查看系统。
-
 一套用于全景平台热点跳转的 3D 模型展示系统：在线多窗口展示 GLB/GLTF/OBJ/FBX 模型，
 每个窗口可独立配置展示文本、专属 MP3 背景音乐、PDF、动画/旋转、背景色等，并可生成
 纯净短链独立页（模型 + 文字 + 音乐 + PDF），完美嵌入全景网页热点。
@@ -25,7 +23,8 @@
 │   ├── 3dview-upload.service   # systemd 开机自启服务
 │   └── 3dview.nginx.conf       # Nginx 站点配置
 ├── scripts/
-│   ├── deploy.sh               # 一键部署脚本
+│   ├── deploy.sh               # 一键部署脚本（服务器端）
+│   ├── deploy_remote.py        # 一键远程部署脚本（本机运行，可选）
 │   ├── restart.sh              # 重启脚本
 │   └── verify.sh               # 健康检查脚本
 ├── DEPLOY.md                   # 完整部署文档
@@ -34,6 +33,8 @@
 ```
 
 ## 快速部署
+
+### 方式一：服务器端脚本（在目标服务器上执行）
 
 环境要求：Ubuntu 22.04/24.04、Python3、Nginx。
 
@@ -45,10 +46,29 @@
 sudo bash scripts/deploy.sh
 ```
 
+### 方式二：本机一键远程部署（推荐，一条命令搞定）
+
+在你的本机电脑上（已安装 Python 与 paramiko）运行：
+
+```bash
+python scripts/deploy_remote.py  <目标服务器公网IP>   [用户名] [密码]
+```
+
+会自动完成：SSH 连接 -> 安装 python3/nginx/unzip -> 上传部署文件 ->
+自动填入目标公网 IP -> 部署(upload_server.py + systemd + nginx) -> 健康检查。
+
+示例：
+```bash
+python scripts/deploy_remote.py YOUR_SERVER_IP
+python scripts/deploy_remote.py YOUR_SERVER_IP root 我的密码
+```
+
+> 若本机缺 paramiko：`pip install paramiko`
+
 部署完成后访问：`http://你的IP:10280/index.html`
 请在云安全组放行 TCP 入站 10280 端口。
 
-> 详细步骤、手动部署、目录/端口速查、运维命令、注意事项见 [DEPLOY.md](DEPLOY.md)。
+> 详细步骤、手动部署、目录/端口速查、运维命令、注意事项见 DEPLOY.md。
 
 ## 使用简介
 
@@ -72,4 +92,4 @@ sudo bash scripts/deploy.sh
 
 ## 开源许可
 
-本项目使用 [MIT License](LICENSE)。使用/修改/再分发请保留版权与许可声明。
+本项目使用 MIT License。使用/修改/再分发请保留版权与许可声明。

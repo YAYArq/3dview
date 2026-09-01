@@ -11,7 +11,9 @@ set -euo pipefail
 # 站点对外端口（需与 conf/3dview.nginx.conf 里的 listen 一致）
 HTTP_PORT=10280
 # 公网访问地址（upload_server 用固定公网基址生成模型/音频 URL，务必改成你的真实公网 IP:端口）
-PUBLIC_BASE="http://YOUR_SERVER_IP:10280"
+# 部署地址：可被环境变量覆盖（远程部署工具会自动注入目标 IP）
+# 例: PUBLIC_BASE='http://YOUR_SERVER_IP:10280' bash deploy.sh
+PUBLIC_BASE="${PUBLIC_BASE:-http://YOUR_SERVER_IP:10280}"
 
 # 部署路径（一般无需修改）
 WEB_ROOT="/var/www/3dview"
