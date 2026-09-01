@@ -46,6 +46,27 @@
 sudo bash scripts/deploy.sh
 ```
 
+### 方式一（最简单）：从 GitHub 公开仓库直接一键部署
+
+在目标服务器上，直接用 git 克隆本公开仓库并一键部署（无需手动传文件，可自动探测公网 IP）：
+
+```bash
+# 安装 git 与依赖并克隆
+sudo apt-get update && sudo apt-get install -y git python3 nginx unzip curl
+git clone https://github.com/YAYArq/3dview.git
+cd 3dview
+
+# 一键部署（自动装依赖+探测公网IP+部署；需要 root）
+sudo bash install.sh
+
+# 或者手动指定公网地址（推荐，最稳妥）
+PUBLIC_BASE='http://你的公网IP:10280' sudo bash install.sh
+```
+
+之后访问 `http://你的公网IP:10280/index.html`，并到云安全组放行 **TCP 入站 10280**。
+
+> `install.sh` 会自动：安装 python3/nginx/unzip -> 探测/指定公网 IP -> 调用 `scripts/deploy.sh` 完成 systemd + Nginx 部署。
+
 ### 方式二：本机一键远程部署（推荐，一条命令搞定）
 
 在你的本机电脑上（已安装 Python 与 paramiko）运行：

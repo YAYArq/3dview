@@ -39,29 +39,38 @@ for c in python3 nginx; do
   fi
 done
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 资源基准目录：兼容两种结构
+#  - GitHub 仓库克隆（展平: 仓库根=index.html/conf/scripts）
+#  - deploy 包（scripts/ 内脚本，资源在上级根）
+SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPTS_DIR}/index.html" ]; then
+  BASE_DIR="${SCRIPTS_DIR}"            # 脚本与资源同目录
+else
+  BASE_DIR="$(cd "${SCRIPTS_DIR}/.." && pwd)"  # 资源在上级（仓库根）
+fi
+[ -f "${BASE_DIR}/index.html" ] || { echo "[错误] 未找到 index.html：请在仓库根目录运行 scripts/deploy.sh"; exit 1; }
 
 # ---------- 1) 站点目录与前端 ----------
 echo "[1/6] 部署前端到 ${WEB_ROOT}"
 mkdir -p "${WEB_ROOT}/models" "${WEB_ROOT}/music" "${WEB_ROOT}/pdf"
-cp -f "${SCRIPT_DIR}/index.html" "${WEB_ROOT}/index.html"
+cp -f "${BASE_DIR}/index.html" "${WEB_ROOT}/index.html"
 
 # ---------- 2) 上传/短链后端 ----------
 echo "[2/6] 部署上传服务到 ${UPLOAD_DIR}"
 mkdir -p "${UPLOAD_DIR}" "${CONFIG_DIR}"
 sed "s|^PUBLIC_BASE = .*|PUBLIC_BASE = '${PUBLIC_BASE}'|" \
-  "${SCRIPT_DIR}/upload_server.py" > "${UPLOAD_DIR}/upload_server.py"
+  "${BASE_DIR}/upload_server.py" > "${UPLOAD_DIR}/upload_server.py"
 chmod +x "${UPLOAD_DIR}/upload_server.py"
 
 # ---------- 3) systemd 服务 ----------
 echo "[3/6] 安装开机自启服务"
-cp -f "${SCRIPT_DIR}/conf/3dview-upload.service" "${SVC_FILE}"
+cp -f "${BASE_DIR}/conf/3dview-upload.service" "${SVC_FILE}"
 sed -i "s@ExecStart=.*@ExecStart=/usr/bin/python3 ${UPLOAD_DIR}/upload_server.py@" "${SVC_FILE}"
 systemctl daemon-reload
 
 # ---------- 4) Nginx 站点 ----------
 echo "[4/6] 配置 Nginx（端口 ${HTTP_PORT}）"
-cp -f "${SCRIPT_DIR}/conf/3dview.nginx.conf" "${NGINX_AVAIL}"
+cp -f "${BASE_DIR}/conf/3dview.nginx.conf" "${NGINX_AVAIL}"
 sed -i "s/listen[[:space:]]*[0-9]*;/listen ${HTTP_PORT};/" "${NGINX_AVAIL}"
 ln -sf "${NGINX_AVAIL}" "${NGINX_ENABLED}"
 nginx -t && nginx -s reload || { echo "[错误] nginx 配置校验失败，请检查"; exit 1; }
