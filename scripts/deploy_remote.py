@@ -107,7 +107,7 @@ def main():
     missing = [p for p in REQUIRED_PKGS if p not in out]
     if missing:
         print("    缺少: %s，开始安装 ..." % ", ".join(missing))
-        out, err = run("apt-get update -qq && apt-get install -y -qq %s 2>&1 | tail -5" % " ".join(missing))
+        out, err = run("export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" %s 2>&1 | tail -5" % " ".join(missing))
         print("    安装结果: %s" % out.strip()[-200:] if out.strip() else "    完成")
     else:
         print("    依赖已就绪")
